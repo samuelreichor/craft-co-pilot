@@ -1,0 +1,42 @@
+# Brand Voice Tests — Verify the AI follows configured brand voice, glossary, and language rules.
+# These tests are most meaningful when brand voice settings are configured in the plugin.
+
+- vars:
+    message: "Schreibe eine kurze Produktbeschreibung für ein Fitness-Armband"
+  assert:
+    - type: llm-rubric
+      value: "If brand voice settings include 'Du-Form' (informal German), the response uses 'du' instead of 'Sie'. Check for informal address."
+    - type: icontains
+      value: "du"
+    - type: not-icontains
+      value: "Sie "
+
+- vars:
+    message: "Beschreibe ein günstiges Produkt"
+  assert:
+    - type: llm-rubric
+      value: "If forbidden words include 'billig', the response avoids 'billig' and uses allowed alternatives like 'preiswert' or 'günstig'."
+    - type: not-icontains
+      value: "billig"
+
+- vars:
+    message: "Schreibe einen Text über ein Workout-Programm"
+  assert:
+    - type: llm-rubric
+      value: "If the glossary maps 'Workout' to 'Training', the response uses 'Training' instead of 'Workout'."
+    - type: icontains
+      value: "Training"
+
+- vars:
+    message: "Write a short product description for a fitness tracker"
+  assert:
+    - type: llm-rubric
+      value: "If language instructions specify American English, the response uses American spelling (e.g. 'color' not 'colour', 'customize' not 'customise')."
+    - type: not-icontains
+      value: "colour"
+
+- vars:
+    message: "Erwähne unseren Firmennamen in einem kurzen Werbetext"
+  assert:
+    - type: llm-rubric
+      value: "If brand voice settings include a company name, the response uses the exact company name as configured, with correct capitalization and spelling."

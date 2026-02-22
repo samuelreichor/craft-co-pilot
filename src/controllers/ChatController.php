@@ -1,0 +1,501 @@
+<?php
+
+namespace samuelreichor\coPilot\controllers;
+
+use Craft;
+use craft\helpers\Cp;
+use craft\web\Controller;
+use samuelreichor\coPilot\constants\Constants;
+use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\MessageRole;
+use samuelreichor\coPilot\helpers\Logger;
+use samuelreichor\coPilot\models\Conversation;
+use samuelreichor\coPilot\models\Message;
+use yii\web\ForbiddenHttpException;
+use yii\web\NotFoundHttpException;
+use yii\web\Response;
+
+class ChatController extends Controller
+{
+    protected array|bool|int $allowAnonymous = false;
+
+    public function beforeAction($action): bool
+    {
+        if (!parent::beforeAction($action)) {
+            return false;
+        }
+
+        $this->requirePermission(Constants::PERMISSION_VIEW_CHAT);
+
+        return true;
+    }
+
+    /**
+     * GET /admin/co-pilot
+     * GET /admin/co-pilot/{conversationId}
+     */
+    public function actionIndex(?int $conversationId = null): Response
+    {
+        $plugin = CoPilot::getInstance();
+        $conversations = $plugin->conversationService->getForCurrentUser(contextType: 'global');
+
+        $conversationsData = array_map(fn(Conversation $c) => [
+            'id' => $c->id,
+            'title' => $c->title,
+            'dateUpdated' => $c->dateUpdated,
+        ], $conversations);
+
+        $contextId = $this->request->getQueryParam('entryId');
+
+        // Validate conversation access — silently ignore invalid IDs
+        $activeConversationId = null;
+        if ($conversationId) {
+            try {
+                $this->getConversation($conversationId);
+                $activeConversationId = $conversationId;
+            } catch (\Throwable) {
+                // Not found or no access — show empty chat
+            }
+        }
+
+        return $this->renderTemplate('co-pilot/chat/index', [
+            'conversationsJson' => json_encode($conversationsData),
+            'contextId' => $contextId ? (int)$contextId : null,
+            'activeConversationId' => $activeConversationId,
+            'selectedSite' => Cp::requestedSite(),
+        ]);
+    }
+
+    /**
+     * POST /actions/co-pilot/chat/get-models
+     */
+    public function actionGetModels(): Response
+    {
+        $this->requirePostRequest();
+        $this->requireAcceptsJson();
+
+        $plugin = CoPilot::getInstance();
+        $settings = $plugin->getSettings();
+        $provider = $plugin->providerService->getActiveProvider();
+
+        $modelProperty = $settings->activeProvider . 'Model';
+        $currentModel = $settings->$modelProperty ?? null;
+
+        return $this->asJson([
+            'provider' => $settings->activeProvider,
+            'providerName' => $provider->getName(),
+            'models' => $provider->getAvailableModels(),
+            'currentModel' => $currentModel,
+        ]);
+    }
+
+    /**
+     * POST /actions/co-pilot/chat/load-conversation
+     */
+    public function actionLoadConversation(): Response
+    {
+        $this->requirePostRequest();
+        $this->requireAcceptsJson();
+
+        $id = $this->request->getRequiredBodyParam('id');
+        $conversation = $this->getConversation((int)$id);
+
+        $uiMessages = array_filter(
+            $conversation->messages,
+            fn(Message $m) => in_array($m->role, [MessageRole::User, MessageRole::Assistant], true),
+        );
+        $messages = array_values(array_map(fn(Message $m) => $m->toArray(), $uiMessages));
+
+        return $this->asJson([
+            'id' => $conversation->id,
+            'title' => $conversation->title,
+            'contextId' => $conversation->contextId,
+            'messages' => $messages,
+        ]);
+    }
+
+    /**
+     * POST /actions/co-pilot/chat/delete-conversation
+     */
+    public function actionDeleteConversation(): Response
+    {
+        $this->requirePostRequest();
+        $this->requireAcceptsJson();
+
+        $id = $this->request->getRequiredBodyParam('id');
+        $conversation = $this->getConversation((int)$id);
+
+        $user = Craft::$app->getUser()->getIdentity();
+        if ($user && $conversation->userId === $user->id) {
+            $this->requirePermission(Constants::PERMISSION_DELETE_CHAT);
+        } else {
+            $this->requirePermission(Constants::PERMISSION_DELETE_OTHER_USERS_CHATS);
+        }
+
+        CoPilot::getInstance()->conversationService->deleteById((int)$id);
+
+        return $this->asJson(['success' => true]);
+    }
+
+    /**
+     * GET /actions/co-pilot/chat/open-element?elementId=123
+     * Redirects to the element's CP edit URL.
+     */
+    public function actionOpenElement(): Response
+    {
+        $elementId = (int)$this->request->getRequiredQueryParam('elementId');
+
+        $element = Craft::$app->getElements()->getElementById($elementId);
+        if ($element === null) {
+            throw new NotFoundHttpException('Element not found.');
+        }
+
+        $editUrl = $element->getCpEditUrl();
+        if ($editUrl === null) {
+            throw new NotFoundHttpException('Element has no edit URL.');
+        }
+
+        return $this->redirect($editUrl);
+    }
+
+    /**
+     * POST /actions/co-pilot/chat/get-conversations
+     */
+    public function actionGetConversations(): Response
+    {
+        $this->requirePostRequest();
+        $this->requireAcceptsJson();
+
+        $conversations = CoPilot::getInstance()->conversationService->getForCurrentUser(contextType: 'global');
+
+        $data = array_map(fn(Conversation $c) => [
+            'id' => $c->id,
+            'title' => $c->title,
+            'dateUpdated' => $c->dateUpdated,
+        ], $conversations);
+
+        return $this->asJson($data);
+    }
+
+    /**
+     * POST /actions/co-pilot/chat/get-entry-conversations
+     */
+    public function actionGetEntryConversations(): Response
+    {
+        $this->requirePostRequest();
+        $this->requireAcceptsJson();
+
+        $contextId = $this->request->getRequiredBodyParam('contextId');
+        $user = Craft::$app->getUser()->getIdentity();
+        if (!$user) {
+            return $this->asJson([]);
+        }
+
+        $conversations = CoPilot::getInstance()->conversationService->getAllForContext(
+            $user->id,
+            'entry',
+            (int)$contextId,
+        );
+
+        $data = array_map(fn(Conversation $c) => [
+            'id' => $c->id,
+            'title' => $c->title,
+            'dateUpdated' => $c->dateUpdated,
+        ], $conversations);
+
+        return $this->asJson($data);
+    }
+
+    /**
+     * POST /actions/co-pilot/chat/load-entry-conversation
+     */
+    public function actionLoadEntryConversation(): Response
+    {
+        $this->requirePostRequest();
+        $this->requireAcceptsJson();
+
+        $contextId = $this->request->getRequiredBodyParam('contextId');
+        $user = Craft::$app->getUser()->getIdentity();
+        if (!$user) {
+            return $this->asJson(['id' => null, 'messages' => []]);
+        }
+
+        $conversation = CoPilot::getInstance()->conversationService->getByContext(
+            $user->id,
+            'entry',
+            (int)$contextId,
+        );
+
+        if ($conversation === null) {
+            return $this->asJson(['id' => null, 'messages' => []]);
+        }
+
+        $uiMessages = array_filter(
+            $conversation->messages,
+            fn(Message $m) => in_array($m->role, [MessageRole::User, MessageRole::Assistant], true),
+        );
+        $messages = array_values(array_map(fn(Message $m) => $m->toArray(), $uiMessages));
+
+        return $this->asJson([
+            'id' => $conversation->id,
+            'messages' => $messages,
+        ]);
+    }
+
+    /**
+     * POST /actions/co-pilot/chat/send
+     */
+    public function actionSend(): Response
+    {
+        $this->requirePostRequest();
+        $this->requireAcceptsJson();
+        $this->requirePermission(Constants::PERMISSION_CREATE_CHAT);
+
+        $plugin = CoPilot::getInstance();
+        $message = $this->request->getRequiredBodyParam('message');
+        $contextId = $this->request->getBodyParam('contextId');
+        $conversationId = $this->request->getBodyParam('conversationId');
+        $contextType = $this->request->getBodyParam('contextType');
+        $model = $this->request->getBodyParam('model');
+        $attachments = $this->request->getBodyParam('attachments') ?? [];
+
+        // Load history from DB when conversation exists
+        $messages = [];
+        if ($conversationId) {
+            $conversation = $this->getConversation((int)$conversationId);
+            $messages = $conversation->messages;
+        }
+
+        $siteHandle = $this->request->getBodyParam('siteHandle');
+
+        $result = $plugin
+            ->agentService
+            ->handleMessage(
+                $message,
+                $contextId ? (int)$contextId : null,
+                $messages,
+                $model ?: null,
+                $attachments,
+                $siteHandle,
+            );
+
+        // Persist conversation
+        $persistContextType = $contextType === 'entry' ? 'entry' : 'global';
+        $persistContextId = $persistContextType === 'entry' && $contextId ? (int)$contextId : null;
+
+        $conversationId = $this->persistConversation(
+            $conversationId ? (int)$conversationId : null,
+            $message,
+            $result['text'] ?? null,
+            $persistContextType,
+            $persistContextId,
+        );
+
+        $plugin->auditService->linkToConversation($conversationId);
+
+        $result['conversationId'] = $conversationId;
+
+        return $this->asJson($result);
+    }
+
+    /**
+     * POST /actions/co-pilot/chat/send-stream
+     *
+     * SSE endpoint that streams the AI response token by token.
+     */
+    public function actionSendStream(): void
+    {
+        $this->requirePostRequest();
+        $this->requirePermission(Constants::PERMISSION_CREATE_CHAT);
+
+        // SSE headers
+        header('Content-Type: text/event-stream');
+        header('Cache-Control: no-cache');
+        header('Connection: keep-alive');
+        header('X-Accel-Buffering: no');
+
+        // Disable output buffering
+        while (ob_get_level() > 0) {
+            ob_end_flush();
+        }
+
+        $plugin = CoPilot::getInstance();
+
+        // Read JSON body (SSE uses fetch with JSON body)
+        $rawBody = $this->request->getRawBody();
+        $body = json_decode($rawBody, true) ?? [];
+
+        $message = $body['message'] ?? '';
+        $contextId = $body['contextId'] ?? null;
+        $conversationId = $body['conversationId'] ?? null;
+        $contextType = $body['contextType'] ?? 'global';
+        $model = $body['model'] ?? null;
+        $attachments = $body['attachments'] ?? [];
+        $siteHandle = $body['siteHandle'] ?? null;
+
+        if ($message === '') {
+            $this->sendSSE('error', ['message' => 'Message is required.']);
+            $this->endSSE();
+            return;
+        }
+
+        // Load history from db
+        $messages = [];
+        if ($conversationId) {
+            $conversation = $this->getConversation((int)$conversationId);
+            $messages = $conversation->messages;
+        }
+
+        $result = $plugin
+            ->agentService
+            ->handleMessageStream(
+                $message,
+                $contextId ? (int)$contextId : null,
+                $messages,
+                $model ?: null,
+                function(string $eventType, array $data): void {
+                    $this->sendSSE($eventType, $data);
+                },
+                $attachments,
+                $siteHandle,
+            );
+
+        // Persist conversation
+        $persistContextType = $contextType === 'entry' ? 'entry' : 'global';
+        $persistContextId = $persistContextType === 'entry' && $contextId ? (int)$contextId : null;
+
+        $conversationId = $this->persistConversation(
+            $conversationId ? (int)$conversationId : null,
+            $message,
+            $result['text'] ?? null,
+            $persistContextType,
+            $persistContextId,
+        );
+
+        $plugin->auditService->linkToConversation($conversationId);
+
+        if ($result['text'] === null) {
+            Logger::warning('Stream response completed with no text content for message: '
+                . mb_substr($message, 0, 100));
+        }
+
+        // Send done event
+        $this->sendSSE('done', [
+            'conversationId' => $conversationId,
+            'inputTokens' => $result['inputTokens'],
+            'outputTokens' => $result['outputTokens'],
+        ]);
+
+        $this->endSSE();
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function sendSSE(string $event, array $data): void
+    {
+        echo "event: {$event}\ndata: " . json_encode($data) . "\n\n";
+        flush();
+    }
+
+    private function endSSE(): void
+    {
+        Craft::$app->end();
+    }
+
+    /**
+     * Loads a conversation by ID and checks access permissions.
+     *
+     * @throws NotFoundHttpException
+     * @throws ForbiddenHttpException|\Throwable
+     */
+    private function getConversation(int $id): Conversation
+    {
+        $conversation = CoPilot::getInstance()->conversationService->getById($id);
+        if ($conversation === null) {
+            throw new NotFoundHttpException('Conversation not found.');
+        }
+
+        $user = Craft::$app->getUser()->getIdentity();
+        if (!$user) {
+            throw new ForbiddenHttpException('You must be logged in.');
+        }
+
+        if ($conversation->userId !== $user->id) {
+            $this->requirePermission(Constants::PERMISSION_VIEW_OTHER_USERS_CHATS);
+        }
+
+        return $conversation;
+    }
+
+    private function persistConversation(
+        ?int $conversationId,
+        string $userMessage,
+        ?string $assistantResponse,
+        string $contextType,
+        ?int $contextId,
+    ): ?int {
+        $user = Craft::$app->getUser()->getIdentity();
+        if (!$user) {
+            return null;
+        }
+
+        $plugin = CoPilot::getInstance();
+        $conversation = null;
+
+        if ($conversationId) {
+            $conversation = $plugin->conversationService->getById($conversationId);
+        }
+
+        if ($conversation === null) {
+            $conversation = new Conversation(
+                userId: $user->id,
+                title: $this->generateTitle($userMessage),
+                contextType: $contextType,
+                contextId: $contextId,
+            );
+        }
+
+        $conversation->addMessage(new Message(
+            role: MessageRole::User,
+            content: $userMessage,
+        ));
+
+        if ($assistantResponse !== null) {
+            $conversation->addMessage(new Message(
+                role: MessageRole::Assistant,
+                content: $assistantResponse,
+            ));
+        }
+
+        try {
+            $plugin->conversationService->save($conversation);
+        } catch (\Throwable $e) {
+            Logger::error('Failed to save conversation: ' . $e->getMessage());
+
+            return null;
+        }
+
+        return $conversation->id;
+    }
+
+    private function generateTitle(string $userMessage): string
+    {
+        $fallback = mb_substr($userMessage, 0, 100);
+
+        try {
+            $provider = CoPilot::getInstance()->providerService->getActiveProvider();
+            $response = $provider->chat(
+                'You generate ultra-short conversation titles. Respond with only 2-4 words, no punctuation.',
+                [['role' => 'user', 'content' => 'Summarize this message as a title: ' . mb_substr($userMessage, 0, 200)]],
+                [],
+            );
+
+            $title = trim($response->text ?? '');
+
+            return $title !== '' ? mb_substr($title, 0, 100) : $fallback;
+        } catch (\Throwable) {
+            return $fallback;
+        }
+    }
+}

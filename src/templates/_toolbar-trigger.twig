@@ -1,0 +1,116 @@
+<button type="button" class="btn co-pilot-toolbar-btn" id="co-pilot-open-chat"
+        title="CoPilot" aria-label="CoPilot">
+    {{ icon|raw }}
+</button>
+
+<style>
+.co-pilot-toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 8px;
+}
+.co-pilot-toolbar-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* Slideout shared styles */
+.co-pilot-craft-slideout .so-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.co-pilot-slideout-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+.co-pilot-slideout-body .co-pilot-chat-main {
+    height: auto;
+    flex: 1;
+    min-height: 0;
+}
+.co-pilot-slideout-actions {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--gray-200);
+}
+/* Dropdown */
+.co-pilot-slideout-dropdown-wrap {
+    position: relative;
+    min-width: 0;
+    flex: 1;
+}
+.co-pilot-slideout-dropdown-toggle {
+    display: flex !important;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+}
+.co-pilot-slideout-dropdown-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.co-pilot-slideout-dropdown-caret {
+    flex-shrink: 0;
+    font-size: 10px;
+    opacity: 0.6;
+}
+.co-pilot-slideout-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    min-width: 200px;
+    max-height: 240px;
+    overflow-y: auto;
+    background: var(--white);
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    z-index: 100;
+}
+.co-pilot-slideout-dropdown__item {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    background: none;
+    border: none;
+    text-align: left;
+    font-size: 13px;
+    color: var(--text-color);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.co-pilot-slideout-dropdown__item:hover {
+    background: var(--gray-050);
+}
+.co-pilot-slideout-dropdown__item--active {
+    font-weight: 600;
+    color: var(--blue-500);
+}
+.co-pilot-slideout-dropdown__item + .co-pilot-slideout-dropdown__item {
+    border-top: 1px solid var(--gray-100);
+}
+.co-pilot-slideout-dropdown__empty {
+    padding: 12px;
+    font-size: 13px;
+    color: var(--gray-400);
+    text-align: center;
+}
+</style>
+
+<script>
+    window.__coPilotEntryId = {{ entryId ?? 'null' }};
+</script>

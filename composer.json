@@ -1,0 +1,57 @@
+{
+  "name": "samuelreichor/craft-co-pilot",
+  "description": "AI Agent plugin for Craft CMS with chat interface, entry context awareness, field-level read/write, and multi-provider support.",
+  "type": "craft-plugin",
+  "license": "proprietary",
+  "support": {
+    "email": "samuelreichor@gmail.com",
+    "issues": "https://github.com/samuelreichor/craft-co-pilot/issues?state=open",
+    "source": "https://github.com/samuelreichor/craft-co-pilot",
+    "docs": "https://github.com/samuelreichor/craft-co-pilot",
+    "rss": "https://github.com/samuelreichor/craft-co-pilot/releases.atom"
+  },
+  "require": {
+    "php": ">=8.2",
+    "craftcms/cms": "^5.0.0"
+  },
+  "require-dev": {
+    "craftcms/ecs": "dev-main",
+    "craftcms/phpstan": "dev-main",
+    "phpunit/phpunit": "^11.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "samuelreichor\\coPilot\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "samuelreichor\\coPilot\\tests\\": "tests/"
+    }
+  },
+  "extra": {
+    "handle": "co-pilot",
+    "name": "coPilot",
+    "developer": "Samuel Reichör",
+    "documentationUrl": "https://github.com/samuelreichor/craft-co-pilot",
+    "class": "samuelreichor\\coPilot\\CoPilot"
+  },
+  "scripts": {
+    "check-cs": "ecs check --ansi",
+    "fix-cs": "ecs check --ansi --fix",
+    "phpstan": "phpstan --memory-limit=1G",
+    "test": "phpunit",
+    "eval": "npx promptfoo@latest eval -c evals/promptfooconfig.yaml",
+    "eval:view": "npx promptfoo@latest view"
+  },
+  "config": {
+    "sort-packages": true,
+    "platform": {
+      "php": "8.2"
+    },
+    "allow-plugins": {
+      "yiisoft/yii2-composer": true,
+      "craftcms/plugin-installer": true
+    }
+  }
+}

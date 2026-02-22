@@ -1,0 +1,39 @@
+{% extends '_layouts/cp' %}
+
+{% set title = 'CoPilot' %}
+{% set selectedSubnavItem = 'chat' %}
+
+{% set selectableSites = craft.app.sites.getEditableSites() %}
+{% if selectableSites|length > 1 %}
+    {% set crumbs = [{
+        id: 'site-crumb',
+        icon: 'world',
+        label: selectedSite.name|t('site'),
+        menu: {
+            items: siteMenuItems(selectableSites, selectedSite),
+            label: 'Select site'|t('app'),
+        },
+    }] %}
+{% endif %}
+
+{% do view.registerAssetBundle('samuelreichor\\coPilot\\web\\assets\\chat\\ChatAsset') %}
+
+{% block actionButton %}
+    <div id="co-pilot-action-btns"></div>
+{% endblock %}
+
+{% block sidebar %}
+    <div id="co-pilot-sidebar-mount"></div>
+{% endblock %}
+
+{% block content %}
+    <div id="co-pilot-chat-app"></div>
+    <script>
+        window.__COPILOT_INIT__ = {
+            conversations: {{ conversationsJson|raw }},
+            contextId: {{ contextId ?? 'null' }},
+            activeConversationId: {{ activeConversationId ?? 'null' }},
+            siteHandle: {{ selectedSite.handle|json_encode|raw }},
+        };
+    </script>
+{% endblock %}

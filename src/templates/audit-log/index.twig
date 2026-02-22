@@ -1,0 +1,135 @@
+{% extends '_layouts/cp' %}
+
+{% set title = 'Audit Log' %}
+{% set selectedSubnavItem = 'audit-log' %}
+
+{% set selectableSites = craft.app.sites.getEditableSites() %}
+{% if selectableSites|length > 1 %}
+    {% set crumbs = [{
+        id: 'site-crumb',
+        icon: 'world',
+        label: selectedSite.name|t('site'),
+        menu: {
+            items: siteMenuItems(selectableSites, selectedSite),
+            label: 'Select site'|t('app'),
+        },
+    }] %}
+{% endif %}
+
+{% do view.registerAssetBundle('craft\\web\\assets\\admintable\\AdminTableAsset') %}
+
+{% css %}
+.co-pilot-audit-detail { padding: 4px 0; }
+.co-pilot-audit-error { padding: 8px 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #dc2626; font-size: 13px; margin-bottom: 10px; }
+.co-pilot-audit-meta { font-size: 13px; margin-bottom: 10px; }
+.co-pilot-audit-field-name { font-size: 13px; font-weight: 600; margin: 12px 0 6px; }
+.co-pilot-audit-field-name:first-child { margin-top: 0; }
+.co-pilot-audit-no-diff { color: var(--gray-400); font-size: 13px; }
+.co-pilot-diff-split { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; border: 1px solid var(--gray-200); border-radius: 6px; overflow: hidden; }
+.co-pilot-diff-side { min-width: 0; background: var(--white); }
+.co-pilot-diff-header { padding: 6px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--gray-500); border-bottom: 1px solid var(--gray-200); }
+.co-pilot-diff-side--old .co-pilot-diff-header { background: #fff5f5; }
+.co-pilot-diff-side--new .co-pilot-diff-header { background: #f0fff4; }
+.co-pilot-diff-content { padding: 10px 12px; margin: 0; font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; overflow-x: auto; max-height: 400px; overflow-y: auto; }
+.co-pilot-diff-single { border: 1px solid var(--gray-200); border-radius: 6px; overflow: hidden; }
+.co-pilot-diff-single--added { background: #f0fff4; }
+.co-pilot-diff-single--added .co-pilot-diff-header { background: #dcfce7; color: #059669; }
+.co-pilot-diff-single--removed { background: #fff5f5; }
+.co-pilot-diff-single--removed .co-pilot-diff-header { background: #fee2e2; color: #dc2626; }
+.co-pilot-audit-action--create { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #ecfdf5; color: #059669; }
+.co-pilot-audit-action--update { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #eff6ff; color: #2563eb; }
+.co-pilot-audit-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.co-pilot-audit-pill--success { background: #ecfdf5; color: #059669; }
+.co-pilot-audit-pill--error, .co-pilot-audit-pill--denied { background: #fef2f2; color: #dc2626; }
+@media (max-width: 768px) { .co-pilot-diff-split { grid-template-columns: 1fr; } }
+{% endcss %}
+
+{% block content %}
+    <div style="margin-bottom: 14px;">
+        <button type="button" id="action-filter-btn" class="btn menubtn" data-icon="filter">All Actions</button>
+        <div class="menu">
+            <ul class="padded">
+                <li><a data-value="" class="sel">All Actions</a></li>
+                <li><a data-value="create">Created</a></li>
+                <li><a data-value="update">Updated</a></li>
+            </ul>
+        </div>
+    </div>
+    <div id="audit-log-table"></div>
+{% endblock %}
+
+{% js %}
+var siteId = {{ selectedSite.id }};
+
+function formatDate(value) {
+    if (!value) return '';
+    var d = new Date(value.replace(' ', 'T') + 'Z');
+    return d.toLocaleString();
+}
+
+function formatUser(value) {
+    if (!value || !value.name) return '\u2014';
+    return '<a href="' + Craft.escapeHtml(value.url) + '">' + Craft.escapeHtml(value.name) + '</a>';
+}
+
+function formatAction(value) {
+    var cls = value === 'create' ? 'co-pilot-audit-action--create' : 'co-pilot-audit-action--update';
+    var label = value === 'create' ? 'Created' : 'Updated';
+    return '<span class="' + cls + '">' + label + '</span>';
+}
+
+function formatStatus(value) {
+    var label = value === 'success' ? 'Success' : 'Error';
+    var cls = value === 'success' ? 'co-pilot-audit-pill--success' : 'co-pilot-audit-pill--error';
+    return '<span class="co-pilot-audit-pill ' + cls + '">' + label + '</span>';
+}
+
+function formatConversation(value) {
+    if (!value || !value.url) return '\u2014';
+    return '<a href="' + Craft.escapeHtml(value.url) + '" title="Open chat">' +
+        '<span data-icon="chat" aria-hidden="true"></span> #' + value.id +
+        '</a>';
+}
+
+var activeAction = '';
+
+var table = new Craft.VueAdminTable({
+    columns: [
+        { name: 'dateCreated', title: 'Date', sortField: 'dateCreated', callback: formatDate },
+        { name: 'user', title: 'User', sortField: 'user', callback: formatUser },
+        { name: 'action', title: 'Action', sortField: 'action', callback: formatAction },
+        { name: 'tool', title: 'Tool', sortField: 'tool' },
+        { name: '__slot:title', title: 'Entry', sortField: '__slot:title' },
+        { name: 'status', title: 'Status', callback: formatStatus },
+        { name: 'conversation', title: 'Chat', callback: formatConversation },
+        { name: '__slot:detail', title: '' },
+    ],
+    container: '#audit-log-table',
+    tableDataEndpoint: Craft.getActionUrl('co-pilot/audit-log/table-data'),
+    perPage: 25,
+    search: true,
+    searchPlaceholder: 'Search audit logs\u2026',
+    emptyMessage: 'No audit log entries found.',
+    fullPane: true,
+    padded: false,
+    onQueryParams: function(params) {
+        params.siteId = siteId;
+        if (activeAction) {
+            params.action = activeAction;
+        }
+        return params;
+    },
+});
+
+var $btn = $('#action-filter-btn');
+var $menu = $btn.next('.menu');
+
+$menu.find('a').on('click', function() {
+    var $a = $(this);
+    activeAction = $a.data('value') || '';
+    $btn.text($a.text());
+    $menu.find('a').removeClass('sel');
+    $a.addClass('sel');
+    table.reload();
+});
+{% endjs %}
