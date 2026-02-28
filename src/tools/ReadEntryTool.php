@@ -55,7 +55,7 @@ class ReadEntryTool implements ToolInterface
             return ['error' => $guard['reason']];
         }
 
-        $entry = Entry::find()->id($entryId)->status(null)->drafts(null)->one();
+        $entry = Entry::find()->id($entryId)->site('*')->status(null)->drafts(null)->one();
         if (!$entry) {
             return ['error' => "Entry #{$entryId} not found."];
         }

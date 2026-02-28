@@ -15,7 +15,7 @@ class UpdateEntryTool implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Updates multiple fields of an existing entry in a single save. Preferred over updateField when changing more than one field – creates only one revision instead of one per field. For Matrix fields: by default new blocks are appended. To replace all blocks use {"_replace": true, "blocks": [...]}. To clear all blocks use [].';
+        return 'Updates one or more fields of an existing entry in a single save (one revision). For Matrix fields: by default new blocks are appended. To replace all blocks use {"_replace": true, "blocks": [...]}. To clear all blocks use []. To update a single Matrix block field, pass the block\'s _blockId as entryId.';
     }
 
     public function getParameters(): array
@@ -28,6 +28,7 @@ class UpdateEntryTool implements ToolInterface
                     'description' => 'The Craft entry ID',
                 ],
                 'fields' => [
+                    'type' => 'object',
                     'description' => 'An object mapping field handles to their new values. Example: {"title": "New Title", "excerpt": "Summary text", "tags": [10, 11]}. Supports all field types (see Field Value Formats).',
                 ],
             ],
@@ -38,7 +39,16 @@ class UpdateEntryTool implements ToolInterface
     public function execute(array $arguments): array
     {
         $entryId = $arguments['entryId'];
-        $fields = $arguments['fields'];
+
+        // AI models sometimes send field values as top-level arguments instead of
+        // wrapping them in a "fields" object. Detect and normalize this.
+        if (!isset($arguments['fields'])) {
+            $reserved = ['entryId'];
+            $flatFields = array_diff_key($arguments, array_flip($reserved));
+            $fields = $flatFields !== [] ? $flatFields : [];
+        } else {
+            $fields = $arguments['fields'];
+        }
 
         if (!is_array($fields) || $fields === []) {
             return [
@@ -58,7 +68,7 @@ class UpdateEntryTool implements ToolInterface
             ];
         }
 
-        $entry = Entry::find()->id($entryId)->status(null)->drafts(null)->one();
+        $entry = Entry::find()->id($entryId)->site('*')->status(null)->drafts(null)->one();
         if (!$entry) {
             return [
                 'error' => "Entry #{$entryId} not found.",
@@ -71,6 +81,7 @@ class UpdateEntryTool implements ToolInterface
 
         // Capture old values and set new values
         $diff = [];
+        $skippedFields = [];
         $nativeFields = ['title', 'slug'];
 
         foreach ($fields as $fieldHandle => $value) {
@@ -84,10 +95,9 @@ class UpdateEntryTool implements ToolInterface
                 try {
                     $entry->setFieldValue($fieldHandle, $value);
                 } catch (\Throwable $e) {
-                    return [
-                        'error' => "Invalid field handle '{$fieldHandle}': {$e->getMessage()}",
-                        'retryHint' => "Remove or correct the field '{$fieldHandle}' and retry.",
-                    ];
+                    $skippedFields[$fieldHandle] = $e->getMessage();
+
+                    continue;
                 }
             }
 
@@ -104,7 +114,7 @@ class UpdateEntryTool implements ToolInterface
             $retryHint = null;
 
             if (stripos($message, 'unknown property') !== false) {
-                $retryHint = 'A field handle is incorrect (case-sensitive). Call listSections to verify the exact handles and retry.';
+                $retryHint = 'A field handle is incorrect (case-sensitive). Call describeSection to verify the exact handles and retry.';
             }
 
             return [
@@ -135,15 +145,22 @@ class UpdateEntryTool implements ToolInterface
             ];
         }
 
-        return [
+        $result = [
             'success' => true,
             'entryId' => $entry->id,
             'entryTitle' => $entry->title,
             'cpEditUrl' => $entry->getCpEditUrl(),
-            'updatedFields' => array_keys($fields),
+            'updatedFields' => array_keys($diff),
             'diff' => $diff,
-            'message' => 'Entry updated successfully. ' . count($fields) . ' field(s) changed in a single revision.',
+            'message' => 'Entry updated successfully. ' . count($diff) . ' field(s) changed in a single revision.',
         ];
+
+        if ($skippedFields !== []) {
+            $result['skippedFields'] = $skippedFields;
+            $result['message'] .= ' ' . count($skippedFields) . ' field(s) skipped due to invalid handles.';
+        }
+
+        return $result;
     }
 
     /**

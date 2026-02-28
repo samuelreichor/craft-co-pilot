@@ -171,6 +171,7 @@ class PermissionGuard extends Component
     {
         return Entry::find()
             ->id($entryId)
+            ->site('*')
             ->status(null)
             ->drafts(null)
             ->one();

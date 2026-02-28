@@ -42,7 +42,12 @@ class CreateEntryTool implements ToolInterface
                     'description' => 'Optional custom slug. If omitted, Craft generates one from the title.',
                 ],
                 'fields' => [
+                    'type' => 'object',
                     'description' => 'Optional custom field values as key-value pairs. For text fields: string value. For asset/image fields: array of asset IDs e.g. [123]. For ContentBlock fields: object with sub-field values e.g. {"headline": "Title", "image": [123]}. For Matrix fields: array of block objects e.g. [{"type": "text", "title": "Block Title", "fields": {"richText": "<p>Content</p>"}}]. Each block must include "type" (entry type handle) and "title" if the block type has a title field. Use searchAssets to find asset IDs first.',
+                ],
+                'site' => [
+                    'type' => 'string',
+                    'description' => 'Site handle. Defaults to active site. Use to create entries in a specific site.',
                 ],
             ],
             'required' => ['sectionHandle', 'entryTypeHandle', 'title'],
@@ -55,14 +60,24 @@ class CreateEntryTool implements ToolInterface
         $entryTypeHandle = $arguments['entryTypeHandle'];
         $title = $arguments['title'];
         $slug = $arguments['slug'] ?? null;
-        $fields = $arguments['fields'] ?? [];
+        $siteHandle = $arguments['site'] ?? $arguments['_siteHandle'] ?? null;
+
+        // AI models sometimes send field values as top-level arguments instead of
+        // wrapping them in a "fields" object. Detect and normalize this.
+        if (!isset($arguments['fields'])) {
+            $reserved = ['sectionHandle', 'entryTypeHandle', 'title', 'slug', 'site', '_siteHandle'];
+            $flatFields = array_diff_key($arguments, array_flip($reserved));
+            $fields = $flatFields !== [] ? $flatFields : [];
+        } else {
+            $fields = $arguments['fields'];
+        }
 
         // Find section
         $section = Craft::$app->getEntries()->getSectionByHandle($sectionHandle);
         if (!$section) {
             return [
                 'error' => "Section '{$sectionHandle}' not found.",
-                'retryHint' => 'Call listSections to see available sections.',
+                'retryHint' => 'Call listSections to see available sections and describeSection for field details.',
             ];
         }
 
@@ -93,12 +108,27 @@ class CreateEntryTool implements ToolInterface
             ];
         }
 
+        // Resolve target site
+        if ($siteHandle) {
+            $site = Craft::$app->getSites()->getSiteByHandle($siteHandle);
+            if (!$site) {
+                return [
+                    'error' => "Site '{$siteHandle}' not found.",
+                    'retryHint' => 'Check available site handles and retry.',
+                ];
+            }
+        }
+
         // Create entry as draft
         $entry = new Entry();
         $entry->sectionId = $section->id;
         $entry->typeId = $entryType->id;
         $entry->title = $title;
         $entry->authorId = $user->id;
+
+        if (isset($site)) {
+            $entry->siteId = $site->id;
+        }
 
         if ($slug !== null) {
             $entry->slug = $slug;

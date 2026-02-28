@@ -62,7 +62,7 @@ class ToolFormatter
 
                     // Omit parameters for parameterless tools — Gemini requires this
                     if (self::hasProperties($tool['parameters'])) {
-                        $declaration['parameters'] = $tool['parameters'];
+                        $declaration['parameters'] = self::sanitizeSchemaForGemini($tool['parameters']);
                     }
 
                     return $declaration;
@@ -85,5 +85,36 @@ class ToolFormatter
         }
 
         return is_array($properties) && $properties !== [];
+    }
+
+    /**
+     * Ensures all properties in a schema have a `type` field.
+     * Gemini rejects schemas with typeless properties (returns 400).
+     *
+     * @param array<string, mixed> $schema
+     * @return array<string, mixed>
+     */
+    private static function sanitizeSchemaForGemini(array $schema): array
+    {
+        if (!isset($schema['properties']) || !is_array($schema['properties'])) {
+            return $schema;
+        }
+
+        foreach ($schema['properties'] as $key => $prop) {
+            if (!is_array($prop)) {
+                continue;
+            }
+
+            if (!isset($prop['type'])) {
+                $schema['properties'][$key]['type'] = 'string';
+            }
+
+            // Recurse into nested object properties
+            if (($prop['type'] ?? $schema['properties'][$key]['type'] ?? '') === 'object' && isset($prop['properties'])) {
+                $schema['properties'][$key] = self::sanitizeSchemaForGemini($prop);
+            }
+        }
+
+        return $schema;
     }
 }

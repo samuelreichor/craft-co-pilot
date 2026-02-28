@@ -15,6 +15,9 @@ class Conversation
     /** @var Message[] */
     public array $messages = [];
 
+    /** @var array<int, array<string, mixed>> */
+    public array $debugLog = [];
+
     public function __construct(
         int $userId,
         string $title = 'New conversation',
@@ -31,6 +34,24 @@ class Conversation
         $this->contextId = $contextId;
         $this->dateCreated = $dateCreated;
         $this->dateUpdated = $dateUpdated;
+    }
+
+    /**
+     * Appends a debug turn to the log.
+     *
+     * @param array<string, mixed> $debugData
+     */
+    public function addDebugTurn(array $debugData, int $inputTokens, int $outputTokens): void
+    {
+        $this->debugLog[] = [
+            'timestamp' => (new \DateTimeImmutable())->format('c'),
+            'model' => $debugData['model'] ?? null,
+            'provider' => $debugData['provider'] ?? null,
+            'systemPrompt' => $debugData['systemPrompt'] ?? null,
+            'tokens' => ['input' => $inputTokens, 'output' => $outputTokens],
+            'iterations' => $debugData['iterations'] ?? null,
+            'messages' => $debugData['messages'] ?? [],
+        ];
     }
 
     public function addMessage(Message $message): void

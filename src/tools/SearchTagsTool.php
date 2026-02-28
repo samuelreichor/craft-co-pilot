@@ -14,7 +14,7 @@ class SearchTagsTool implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Searches for tags by title. Returns tag summaries with IDs that can be used in updateField or createEntry (pass as [tagId] array for tag relation fields).';
+        return 'Searches for tags by title. Returns tag summaries with IDs that can be used in updateEntry or createEntry (pass as [tagId] array for tag relation fields).';
     }
 
     public function getParameters(): array

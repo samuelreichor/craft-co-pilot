@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { apiPost } from './composables/useCraftApi';
+import { useDebugExport } from './composables/useDebugExport';
 import type { ConversationSummary, UIMessage } from './types';
 import ChatPanel from './components/ChatPanel.vue';
 
@@ -10,6 +11,7 @@ const props = defineProps<{
 
 const chatPanel = ref<InstanceType<typeof ChatPanel> | null>(null);
 const dropdownWrap = ref<HTMLElement | null>(null);
+const { isExporting, exportDebug } = useDebugExport();
 const conversations = ref<ConversationSummary[]>([]);
 const activeConversationId = ref<number | null>(null);
 const showDropdown = ref(false);
@@ -161,6 +163,16 @@ defineExpose({ loadHistory, focusInput });
         </div>
       </div>
       <button type="button" class="btn small" @click="newChat">+ New</button>
+      <button
+        v-if="activeConversationId"
+        type="button"
+        class="btn small"
+        :disabled="isExporting"
+        title="Export debug log"
+        @click="exportDebug(activeConversationId!)"
+      >
+        {{ isExporting ? '...' : 'Export Debug' }}
+      </button>
     </div>
     <ChatPanel
       ref="chatPanel"

@@ -32,6 +32,7 @@ class Install extends Migration
             'contextType' => $this->string(50)->null(),
             'contextId' => $this->integer()->null(),
             'messages' => $this->json(),
+            'debugLog' => $this->mediumText()->null(),
             'dateCreated' => $this->dateTime()->notNull(),
             'dateUpdated' => $this->dateTime()->notNull(),
             'uid' => $this->uid(),

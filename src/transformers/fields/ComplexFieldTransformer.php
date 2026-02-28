@@ -39,142 +39,140 @@ class ComplexFieldTransformer implements FieldTransformerInterface
 
     public function describeField(FieldInterface $field, array $fieldInfo): array
     {
-        if ($field instanceof TableField) {
-            $fieldInfo['valueFormat'] = 'array of row objects';
-            $fieldInfo['hint'] = 'Each row keyed by column key.';
-            $fieldInfo['columns'] = [];
-            foreach ($field->columns as $colKey => $col) {
-                $fieldInfo['columns'][] = [
-                    'key' => $colKey,
-                    'heading' => $col['heading'],
-                    'type' => $col['type'],
-                ];
-            }
+        return match (true) {
+            $field instanceof TableField => $this->describeTable($field, $fieldInfo),
+            $field instanceof LinkField => $this->describeLink($field, $fieldInfo),
+            $field instanceof MoneyField => $this->describeMoney($field, $fieldInfo),
+            $field instanceof JsonField => $this->describeWithHint($fieldInfo, 'JSON object, array, or null', 'Send any valid JSON value. To clear, set to null.'),
+            $field instanceof MatrixField => $this->describeMatrix($field, $fieldInfo),
+            $field instanceof ContentBlockField => $this->describeWithHint($fieldInfo, 'object with sub-field handles as keys', 'Send {"subFieldHandle": value, ...}. To clear all sub-fields at once, set this field to null. Never include title or slug keys.'),
+            default => $fieldInfo,
+        };
+    }
 
-            if ($field->minRows) {
-                $fieldInfo['minRows'] = $field->minRows;
-            }
-            if ($field->maxRows) {
-                $fieldInfo['maxRows'] = $field->maxRows;
-            }
-        } elseif ($field instanceof LinkField) {
-            $fieldInfo['valueFormat'] = 'link object';
-            $fieldInfo['allowedTypes'] = $field->types;
-            $types = implode(', ', $field->types);
+    public function serializeValue(FieldInterface $field, mixed $value, int $depth): mixed
+    {
+        return match (true) {
+            $field instanceof ContentBlockField && $value instanceof ContentBlockElement => $this->serializeContentBlock($field, $value, $depth),
+            $field instanceof MatrixField && $depth <= 0 => ['_truncated' => true, '_count' => $value->count()],
+            $field instanceof MatrixField => $this->serializeMatrixBlocks($value, $depth - 1),
+            $value instanceof LinkData => $this->serializeLinkData($value),
+            $value instanceof \Money\Money => $this->serializeMoneyData($value),
+            $value instanceof JsonData => $value->getValue(),
+            default => $value,
+        };
+    }
 
-            if (count($field->types) === 1 && $field->types[0] === 'entry') {
-                $fieldInfo['hint'] = 'Type: entry. Value must be an entry ID. Use searchEntries to find valid IDs. Example: {"type": "entry", "value": 123, "label": "My Entry"}.';
-            } elseif (count($field->types) === 1 && $field->types[0] === 'asset') {
-                $fieldInfo['hint'] = 'Type: asset. Value must be an asset ID. Use searchAssets to find valid IDs. Example: {"type": "asset", "value": 456, "label": "My Asset"}.';
-            } else {
-                $fieldInfo['hint'] = 'Allowed types: ' . $types . '. Example: {"type": "url", "value": "https://example.com", "label": "Example"}. For entry/asset types, use the element ID as value.';
-            }
-        } elseif ($field instanceof MoneyField) {
-            $fieldInfo['valueFormat'] = 'integer (minor units)';
-            $fieldInfo['hint'] = '1990 = 19.90 ' . ($field->currency ?? 'USD') . '.';
-            $fieldInfo['currency'] = $field->currency;
-        } elseif ($field instanceof JsonField) {
-            $fieldInfo['valueFormat'] = 'JSON object or array';
-        } elseif ($field instanceof MatrixField) {
-            $fieldInfo['valueFormat'] = 'array of block objects';
-            $fieldInfo['hint'] = 'Appends by default. Replace all: {"_replace": true, "blocks": [...]}. Clear: [].';
+    public function normalizeValue(FieldInterface $field, mixed $value, ?Entry $entry = null): mixed
+    {
+        return match (true) {
+            $field instanceof ContentBlockField && $value === null => $this->buildEmptyContentBlockFields($field),
+            $field instanceof ContentBlockField && is_array($value) && empty($value) => $this->buildEmptyContentBlockFields($field),
+            $field instanceof ContentBlockField && is_array($value) => $this->normalizeContentBlockValue($value),
+            $field instanceof LinkField && (is_int($value) || (is_string($value) && ctype_digit($value))) => ['type' => 'entry', 'value' => (int) $value],
+            $field instanceof LinkField && is_array($value) => $this->normalizeLinkValue($value),
+            $field instanceof MoneyField && is_array($value) && isset($value['amount']) => (int) $value['amount'],
+            $field instanceof MoneyField && ($value === 0 || $value === '0') => 0,
+            $field instanceof TableField && $value === null => [],
+            $field instanceof JsonField && is_array($value) && empty($value) => [],
+            $field instanceof JsonField && is_string($value) => $this->normalizeJsonString($value),
+            $field instanceof MatrixField && is_array($value) => $this->normalizeMatrixFieldInput($field, $value, $entry),
+            default => null,
+        };
+    }
 
-            if ($field->minEntries) {
-                $fieldInfo['minEntries'] = $field->minEntries;
-            }
-            if ($field->maxEntries) {
-                $fieldInfo['maxEntries'] = $field->maxEntries;
-            }
-        } elseif ($field instanceof ContentBlockField) {
-            $fieldInfo['valueFormat'] = 'object with sub-field values';
-            $fieldInfo['hint'] = 'Do NOT include title/slug keys.';
+    /**
+     * @param array<string, mixed> $fieldInfo
+     * @return array<string, mixed>
+     */
+    private function describeWithHint(array $fieldInfo, string $format, string $hint): array
+    {
+        $fieldInfo['valueFormat'] = $format;
+        $fieldInfo['hint'] = $hint;
+
+        return $fieldInfo;
+    }
+
+    /**
+     * @param array<string, mixed> $fieldInfo
+     * @return array<string, mixed>
+     */
+    private function describeTable(TableField $field, array $fieldInfo): array
+    {
+        $fieldInfo['valueFormat'] = 'array of row objects';
+        $fieldInfo['hint'] = 'Each row keyed by column key.';
+        $fieldInfo['columns'] = [];
+        foreach ($field->columns as $colKey => $col) {
+            $fieldInfo['columns'][] = [
+                'key' => $colKey,
+                'heading' => $col['heading'],
+                'type' => $col['type'],
+            ];
+        }
+
+        if ($field->minRows) {
+            $fieldInfo['minRows'] = $field->minRows;
+        }
+        if ($field->maxRows) {
+            $fieldInfo['maxRows'] = $field->maxRows;
         }
 
         return $fieldInfo;
     }
 
-    public function serializeValue(FieldInterface $field, mixed $value, int $depth): mixed
+    /**
+     * @param array<string, mixed> $fieldInfo
+     * @return array<string, mixed>
+     */
+    private function describeLink(LinkField $field, array $fieldInfo): array
     {
-        if ($field instanceof ContentBlockField && $value instanceof ContentBlockElement) {
-            return $this->serializeContentBlock($field, $value, $depth);
-        }
+        $fieldInfo['valueFormat'] = 'link object';
+        $fieldInfo['allowedTypes'] = $field->types;
+        $types = implode(', ', $field->types);
 
-        if ($field instanceof MatrixField) {
-            if ($depth <= 0) {
-                return ['_truncated' => true, '_count' => $value->count()];
-            }
+        $fieldInfo['hint'] = match (true) {
+            count($field->types) === 1 && $field->types[0] === 'entry' => 'Type: entry. Value must be an entry ID. Use searchEntries to find valid IDs. Example: {"type": "entry", "value": 123, "label": "My Entry"}.',
+            count($field->types) === 1 && $field->types[0] === 'asset' => 'Type: asset. Value must be an asset ID. Use searchAssets to find valid IDs. Example: {"type": "asset", "value": 456, "label": "My Asset"}.',
+            default => 'Allowed types: ' . $types . '. Example: {"type": "url", "value": "https://example.com", "label": "Example"}. For entry/asset types, use the element ID as value.',
+        };
 
-            return $this->serializeMatrixBlocks($value, $depth - 1);
-        }
-
-        if ($value instanceof LinkData) {
-            return [
-                '_type' => 'link',
-                'url' => $value->getUrl(),
-                'label' => $value->getLabel(),
-                'type' => $value->getType(),
-                'target' => $value->target,
-            ];
-        }
-
-        if ($value instanceof \Money\Money) {
-            return [
-                '_type' => 'money',
-                'amount' => $value->getAmount(),
-                'currency' => $value->getCurrency()->getCode(),
-            ];
-        }
-
-        if ($value instanceof JsonData) {
-            return $value->getValue();
-        }
-
-        // Table field returns arrays natively
-        if (is_array($value)) {
-            return $value;
-        }
-
-        return $value;
+        return $fieldInfo;
     }
 
-    public function normalizeValue(FieldInterface $field, mixed $value, ?Entry $entry = null): mixed
+    /**
+     * @param array<string, mixed> $fieldInfo
+     * @return array<string, mixed>
+     */
+    private function describeMoney(MoneyField $field, array $fieldInfo): array
     {
-        if ($field instanceof ContentBlockField && is_array($value)) {
-            return $this->normalizeContentBlockValue($value);
+        $fieldInfo['valueFormat'] = 'integer (minor units) or null';
+        $fieldInfo['hint'] = '1990 = 19.90 ' . ($field->currency ?? 'USD') . '. To clear, set to null (not 0).';
+        $fieldInfo['currency'] = $field->currency;
+
+        return $fieldInfo;
+    }
+
+    /**
+     * @param array<string, mixed> $fieldInfo
+     * @return array<string, mixed>
+     */
+    private function describeMatrix(MatrixField $field, array $fieldInfo): array
+    {
+        $fieldInfo['valueFormat'] = 'array of block objects';
+        $fieldInfo['hint'] = 'Each block: {"type": "<blockTypeHandle>", "fields": {"<fieldHandle>": <value>}}. '
+            . 'To ADD blocks to existing ones: {"blocks": [...]}. '
+            . 'To REPLACE ALL existing blocks (destructive!): {"_replace": true, "blocks": [...]}. '
+            . 'To clear: []. '
+            . 'IMPORTANT: Only use _replace when explicitly asked to replace all content. Default is append.';
+
+        if ($field->minEntries) {
+            $fieldInfo['minEntries'] = $field->minEntries;
+        }
+        if ($field->maxEntries) {
+            $fieldInfo['maxEntries'] = $field->maxEntries;
         }
 
-        if ($field instanceof LinkField) {
-            if (is_int($value) || (is_string($value) && ctype_digit($value))) {
-                return ['type' => 'entry', 'value' => (int) $value];
-            }
-            if (is_array($value)) {
-                return $this->normalizeLinkValue($value);
-            }
-        }
-
-        if ($field instanceof MoneyField && is_array($value) && isset($value['amount'])) {
-            return (int) $value['amount'];
-        }
-
-        if ($field instanceof TableField && $value === null) {
-            return [];
-        }
-
-        if ($field instanceof JsonField && is_string($value)) {
-            $decoded = json_decode($value, true);
-            if (json_last_error() === JSON_ERROR_NONE) {
-                return $decoded;
-            }
-        }
-
-        if ($field instanceof MatrixField && is_array($value)) {
-            // Use the AI-provided handle (may be a custom layout handle) for Matrix merging
-            $handle = CoPilot::getInstance()->fieldNormalizer->getCurrentFieldHandle() ?? $field->handle;
-
-            return $this->normalizeMatrixValue($value, $entry, $handle);
-        }
-
-        return null;
+        return $fieldInfo;
     }
 
     /**
@@ -273,6 +271,61 @@ class ComplexFieldTransformer implements FieldTransformerInterface
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    private function serializeLinkData(LinkData $value): array
+    {
+        return [
+            '_type' => 'link',
+            'url' => $value->getUrl(),
+            'label' => $value->getLabel(),
+            'type' => $value->getType(),
+            'target' => $value->target,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeMoneyData(\Money\Money $value): array
+    {
+        return [
+            '_type' => 'money',
+            'amount' => $value->getAmount(),
+            'currency' => $value->getCurrency()->getCode(),
+        ];
+    }
+
+    /**
+     * Builds a "clear all sub-fields" payload for ContentBlock.
+     *
+     * @return array{fields: array<string, null|array{}>}
+     */
+    private function buildEmptyContentBlockFields(ContentBlockField $field): array
+    {
+        $fields = [];
+        $registry = CoPilot::getInstance()->transformerRegistry;
+
+        foreach ($registry->resolveFieldLayoutFields($field->getFieldLayout()) as $resolved) {
+            $subField = $resolved['field'];
+            $handle = $resolved['handle'];
+
+            $fields[$handle] = match (true) {
+                $subField instanceof MatrixField,
+                $subField instanceof \craft\fields\Assets,
+                $subField instanceof \craft\fields\Entries,
+                $subField instanceof \craft\fields\Tags,
+                $subField instanceof \craft\fields\Users,
+                $subField instanceof \craft\fields\Addresses,
+                $subField instanceof TableField => [],
+                default => null,
+            };
+        }
+
+        return ['fields' => $fields];
+    }
+
+    /**
      * @param array<string, mixed> $value
      * @return array<string, mixed>
      */
@@ -329,6 +382,30 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         }
 
         return $value;
+    }
+
+    private function normalizeJsonString(string $value): mixed
+    {
+        $decoded = json_decode($value, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            // json_decode("null") returns null — convert to empty array so
+            // the FieldNormalizer doesn't treat it as "no normalization needed"
+            return $decoded ?? [];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<int|string, mixed> $value
+     * @return array<string, mixed>
+     */
+    private function normalizeMatrixFieldInput(MatrixField $field, array $value, ?Entry $entry): array
+    {
+        // Use the AI-provided handle (may be a custom layout handle) for Matrix merging
+        $handle = CoPilot::getInstance()->fieldNormalizer->getCurrentFieldHandle() ?? $field->handle;
+
+        return $this->normalizeMatrixValue($value, $entry, $handle);
     }
 
     private function detectLinkType(mixed $value): string
@@ -394,7 +471,11 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         $replaceMode = false;
         if (isset($value['_replace']) && $value['_replace'] === true) {
             $replaceMode = true;
-            $value = $value['blocks'] ?? [];
+        }
+
+        // Extract blocks array regardless of replace mode
+        if (isset($value['blocks']) && is_array($value['blocks'])) {
+            $value = $value['blocks'];
         }
 
         $firstKey = array_key_first($value);
@@ -466,6 +547,31 @@ class ComplexFieldTransformer implements FieldTransformerInterface
                     $block[$native] = $block['fields'][$native];
                 }
                 unset($block['fields'][$native]);
+            }
+
+            // Recursively normalize nested matrix-like fields
+            foreach ($block['fields'] as $key => $value) {
+                if (!is_array($value)) {
+                    continue;
+                }
+
+                // Nested Matrix in {"blocks": [...]} or {"_replace": true, "blocks": [...]} format
+                if (isset($value['blocks']) && is_array($value['blocks'])) {
+                    $block['fields'][$key] = $this->normalizeMatrixValue($value, null, $key);
+
+                    continue;
+                }
+
+                // Flat list of block objects
+                if (array_is_list($value)) {
+                    $block['fields'][$key] = array_map(function($item) {
+                        if (is_array($item) && (isset($item['type']) || isset($item['_blockType']))) {
+                            return $this->normalizeMatrixBlock($item);
+                        }
+
+                        return $item;
+                    }, $value);
+                }
             }
         }
 

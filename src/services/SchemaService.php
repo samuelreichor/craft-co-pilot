@@ -13,6 +13,7 @@ use craft\models\FieldLayout;
 use samuelreichor\coPilot\constants\Constants;
 use samuelreichor\coPilot\CoPilot;
 use samuelreichor\coPilot\enums\SectionAccess;
+use samuelreichor\coPilot\helpers\Logger;
 
 /**
  * Builds Craft schema descriptions for the AI.
@@ -20,24 +21,72 @@ use samuelreichor\coPilot\enums\SectionAccess;
 class SchemaService extends Component
 {
     /**
-     * Returns schema info for all sections accessible to the AI.
+     * Returns a lightweight overview of all accessible sections (no field definitions).
      *
      * @return array<string, mixed>
      */
     public function getAccessibleSchema(): array
     {
         if (Craft::$app->getConfig()->getGeneral()->devMode) {
-            return $this->buildSchema();
+            return $this->buildSchema(slim: true);
         }
 
-        $cacheKey = Constants::CACHE_SCHEMA_PREFIX . 'all';
+        $cacheKey = Constants::CACHE_SCHEMA_PREFIX . 'overview';
         $cached = Craft::$app->getCache()->get($cacheKey);
 
         if ($cached !== false) {
             return $cached;
         }
 
-        $schema = $this->buildSchema();
+        $schema = $this->buildSchema(slim: true);
+        Craft::$app->getCache()->set($cacheKey, $schema, 3600);
+
+        return $schema;
+    }
+
+    /**
+     * Returns detailed schema for a single section including all field definitions.
+     *
+     * @return array<string, mixed>
+     */
+    public function getSectionSchema(string $handle): array
+    {
+        if (Craft::$app->getConfig()->getGeneral()->devMode) {
+            return $this->buildSectionSchema($handle, slim: true);
+        }
+
+        $cacheKey = Constants::CACHE_SCHEMA_PREFIX . 'section.' . $handle;
+        $cached = Craft::$app->getCache()->get($cacheKey);
+
+        if ($cached !== false) {
+            return $cached;
+        }
+
+        $schema = $this->buildSectionSchema($handle, slim: true);
+        Craft::$app->getCache()->set($cacheKey, $schema, 3600);
+
+        return $schema;
+    }
+
+    /**
+     * Returns detailed schema for a single entry type including all field definitions.
+     *
+     * @return array<string, mixed>
+     */
+    public function getEntryTypeSchema(string $handle): array
+    {
+        if (Craft::$app->getConfig()->getGeneral()->devMode) {
+            return $this->buildEntryTypeSchema($handle);
+        }
+
+        $cacheKey = Constants::CACHE_SCHEMA_PREFIX . 'entryType.' . $handle;
+        $cached = Craft::$app->getCache()->get($cacheKey);
+
+        if ($cached !== false) {
+            return $cached;
+        }
+
+        $schema = $this->buildEntryTypeSchema($handle);
         Craft::$app->getCache()->set($cacheKey, $schema, 3600);
 
         return $schema;
@@ -48,34 +97,72 @@ class SchemaService extends Component
      */
     public function invalidateCache(): void
     {
-        Craft::$app->getCache()->delete(Constants::CACHE_SCHEMA_PREFIX . 'all');
+        Craft::$app->getCache()->delete(Constants::CACHE_SCHEMA_PREFIX . 'overview');
+
+        // Invalidate all section-specific caches
+        $sections = Craft::$app->getEntries()->getAllSections();
+        foreach ($sections as $section) {
+            Craft::$app->getCache()->delete(Constants::CACHE_SCHEMA_PREFIX . 'section.' . $section->handle);
+        }
+
+        // Invalidate all entry type caches
+        foreach (Craft::$app->getEntries()->getAllEntryTypes() as $entryType) {
+            Craft::$app->getCache()->delete(Constants::CACHE_SCHEMA_PREFIX . 'entryType.' . $entryType->handle);
+        }
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function buildSchema(): array
+    private function buildSchema(bool $slim = false): array
     {
         $settings = CoPilot::getInstance()->getSettings();
         $permissionGuard = CoPilot::getInstance()->permissionGuard;
         $sections = Craft::$app->getEntries()->getAllSections();
         $result = ['sections' => []];
 
+        Logger::info('buildSchema: found ' . count($sections) . ' total sections, slim=' . ($slim ? 'true' : 'false'));
+
         foreach ($sections as $section) {
             $access = $settings->getSectionAccessLevel($section->uid);
 
             if ($access === SectionAccess::Blocked) {
+                Logger::info("buildSchema: section '{$section->handle}' skipped — blocked");
+
                 continue;
             }
 
             $guardCheck = $permissionGuard->canReadSection($section->uid);
             if (!$guardCheck['allowed']) {
+                Logger::info("buildSchema: section '{$section->handle}' skipped — {$guardCheck['reason']}");
+
                 continue;
             }
 
             $permissions = ['read'];
             if ($access === SectionAccess::ReadWrite) {
                 $permissions[] = 'write';
+            }
+
+            if ($slim) {
+                $entryTypes = [];
+                $typeLabels = [];
+                foreach ($section->getEntryTypes() as $et) {
+                    $entryTypes[] = ['handle' => $et->handle, 'name' => $et->name];
+                    $typeLabels[] = "{$et->handle} ({$et->name})";
+                }
+
+                $writable = $access === SectionAccess::ReadWrite ? 'read/write' : 'read-only';
+                $result['sections'][] = [
+                    'handle' => $section->handle,
+                    'name' => $section->name,
+                    'type' => $section->type,
+                    'access' => $writable,
+                    'entryTypes' => $entryTypes,
+                    'summary' => "{$section->name} ({$section->type}, {$writable}) — Entry types: " . implode(', ', $typeLabels),
+                ];
+
+                continue;
             }
 
             $entryTypes = [];
@@ -93,6 +180,73 @@ class SchemaService extends Component
         }
 
         return $result;
+    }
+
+    /**
+     * Builds the detailed schema for a single section by handle.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildSectionSchema(string $handle, bool $slim = false): array
+    {
+        $settings = CoPilot::getInstance()->getSettings();
+        $permissionGuard = CoPilot::getInstance()->permissionGuard;
+        $sections = Craft::$app->getEntries()->getAllSections();
+
+        foreach ($sections as $section) {
+            if ($section->handle !== $handle) {
+                continue;
+            }
+
+            $access = $settings->getSectionAccessLevel($section->uid);
+
+            if ($access === SectionAccess::Blocked) {
+                return ['error' => "Section '{$handle}' is blocked."];
+            }
+
+            $guardCheck = $permissionGuard->canReadSection($section->uid);
+            if (!$guardCheck['allowed']) {
+                return ['error' => "Access denied: {$guardCheck['reason']}"];
+            }
+
+            $permissions = ['read'];
+            if ($access === SectionAccess::ReadWrite) {
+                $permissions[] = 'write';
+            }
+
+            $entryTypes = [];
+            foreach ($section->getEntryTypes() as $entryType) {
+                $entryTypes[] = $slim
+                    ? $this->describeEntryTypeSlim($entryType)
+                    : $this->describeEntryType($entryType);
+            }
+
+            return [
+                'handle' => $section->handle,
+                'name' => $section->name,
+                'type' => $section->type,
+                'permissions' => $permissions,
+                'entryTypes' => $entryTypes,
+            ];
+        }
+
+        return ['error' => "Section '{$handle}' not found."];
+    }
+
+    /**
+     * Builds the detailed schema for a single entry type by handle.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildEntryTypeSchema(string $handle): array
+    {
+        foreach (Craft::$app->getEntries()->getAllEntryTypes() as $entryType) {
+            if ($entryType->handle === $handle) {
+                return $this->describeEntryType($entryType);
+            }
+        }
+
+        return ['error' => "Entry type '{$handle}' not found."];
     }
 
     /**
@@ -129,6 +283,107 @@ class SchemaService extends Component
             'name' => $entryType->name,
             'fields' => $fields,
         ];
+    }
+
+    /**
+     * Slim version of describeEntryType: Matrix fields only list block type handles.
+     *
+     * @return array<string, mixed>
+     */
+    private function describeEntryTypeSlim(EntryType $entryType): array
+    {
+        $fields = [];
+
+        if ($entryType->hasTitleField) {
+            $fields[] = [
+                'handle' => 'title',
+                'name' => 'Title',
+                'type' => 'native',
+                'required' => true,
+            ];
+        }
+
+        if ($entryType->showSlugField) {
+            $fields[] = [
+                'handle' => 'slug',
+                'name' => 'Slug',
+                'type' => 'native',
+            ];
+        }
+
+        $fieldLayout = $entryType->getFieldLayout();
+        $fields = array_merge($fields, $this->describeFieldLayoutFieldsSlim($fieldLayout));
+
+        return [
+            'handle' => $entryType->handle,
+            'name' => $entryType->name,
+            'fields' => $fields,
+        ];
+    }
+
+    /**
+     * Slim version: Matrix fields only list block type handles/names with a hint.
+     * ContentBlock fields are still fully described.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function describeFieldLayoutFieldsSlim(FieldLayout $fieldLayout): array
+    {
+        $registry = CoPilot::getInstance()->transformerRegistry;
+        $fields = [];
+
+        foreach ($registry->resolveFieldLayoutFields($fieldLayout) as $resolved) {
+            $layoutElement = $resolved['layoutElement'];
+            $field = $resolved['field'];
+
+            if ($field instanceof MatrixField) {
+                $blockTypes = [];
+                foreach ($field->getEntryTypes() as $blockEntryType) {
+                    $blockTypes[] = [
+                        'handle' => $blockEntryType->handle,
+                        'name' => $blockEntryType->name,
+                    ];
+                }
+
+                $fieldInfo = [
+                    'handle' => $layoutElement->attribute(),
+                    'name' => $field->name,
+                    'type' => 'Matrix',
+                    'blockTypes' => $blockTypes,
+                    'hint' => 'Call describeEntryType(handle) for full field definitions of each block type.',
+                ];
+
+                if (property_exists($field, 'required') && $field->required) {
+                    $fieldInfo['required'] = true;
+                }
+
+                $fields[] = $fieldInfo;
+            } else {
+                $fields[] = $this->describeCustomField($layoutElement, $field);
+            }
+        }
+
+        // Generated fields
+        if (method_exists($fieldLayout, 'getGeneratedFields')) {
+            foreach ($fieldLayout->getGeneratedFields() as $generated) {
+                if (!is_array($generated) || !isset($generated['handle'])) {
+                    continue;
+                }
+
+                $handle = $generated['handle'];
+                if ($handle === 'title' || $handle === 'slug') {
+                    continue;
+                }
+
+                $fields[] = [
+                    'handle' => $handle,
+                    'name' => $handle,
+                    'type' => 'generated',
+                ];
+            }
+        }
+
+        return $fields;
     }
 
     /**

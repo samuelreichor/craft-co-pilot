@@ -45,6 +45,14 @@ class SearchEntriesTool implements ToolInterface
                     'type' => 'string',
                     'description' => 'Sort order: score, dateCreated, dateUpdated, title. Default: score.',
                 ],
+                'authorId' => [
+                    'type' => 'integer',
+                    'description' => 'Filter by author user ID. Use searchUsers to find the ID first.',
+                ],
+                'site' => [
+                    'type' => 'string',
+                    'description' => 'Site handle. Defaults to active site. Use to search other sites (e.g. for translation).',
+                ],
             ],
             'required' => [],
         ];
@@ -54,6 +62,7 @@ class SearchEntriesTool implements ToolInterface
     {
         $searchQuery = $arguments['query'] ?? null;
         $sectionHandle = $arguments['section'] ?? null;
+        $siteHandle = $arguments['site'] ?? $arguments['_siteHandle'] ?? null;
         $defaultLimit = CoPilot::getInstance()->getSettings()->defaultSearchLimit;
         $limit = min($arguments['limit'] ?? $defaultLimit, 50);
         $status = $arguments['status'] ?? 'live';
@@ -67,7 +76,17 @@ class SearchEntriesTool implements ToolInterface
             }
         }
 
+        $authorId = isset($arguments['authorId']) ? (int)$arguments['authorId'] : null;
+
         $query = Entry::find()->limit($limit);
+
+        if ($siteHandle) {
+            $query->site($siteHandle);
+        }
+
+        if ($authorId) {
+            $query->authorId($authorId);
+        }
 
         if ($searchQuery) {
             $query->search($searchQuery);
@@ -91,17 +110,19 @@ class SearchEntriesTool implements ToolInterface
         // Apply ordering
         $query->orderBy($this->resolveOrderBy($orderBy));
 
-        // Filter to allowed sections only
-        $allowedSectionIds = $this->getAllowedSectionIds();
-        if (empty($allowedSectionIds)) {
-            return [
-                'total' => 0,
-                'results' => [],
-                'error' => 'No accessible sections. The current user may lack entry view permissions.',
-                'retryHint' => null,
-            ];
+        // Filter to allowed sections only (skip if a specific section was already validated)
+        if (!$sectionHandle) {
+            $allowedSectionIds = $this->getAllowedSectionIds();
+            if (empty($allowedSectionIds)) {
+                return [
+                    'total' => 0,
+                    'results' => [],
+                    'error' => 'No accessible sections. The current user may lack entry view permissions.',
+                    'retryHint' => null,
+                ];
+            }
+            $query->sectionId($allowedSectionIds);
         }
-        $query->sectionId($allowedSectionIds);
 
         $total = $query->count();
         $entries = $query->all();
@@ -111,6 +132,7 @@ class SearchEntriesTool implements ToolInterface
             'title' => $entry->title,
             'section' => $entry->getSection()->handle,
             'type' => $entry->getType()->handle,
+            'site' => $entry->getSite()->handle,
             'status' => $entry->getStatus(),
             'dateUpdated' => $entry->dateUpdated?->format('Y-m-d'),
             'url' => $entry->url,
@@ -120,17 +142,22 @@ class SearchEntriesTool implements ToolInterface
             // When a search query was used, check if entries exist without the query
             if ($searchQuery) {
                 $browseQuery = Entry::find()
-                    ->status($status === 'any' ? null : $status)
-                    ->sectionId($allowedSectionIds);
+                    ->status($status === 'any' ? null : $status);
+
+                if ($sectionHandle) {
+                    $browseQuery->section($sectionHandle);
+                } else {
+                    $browseQuery->sectionId($allowedSectionIds);
+                }
+
+                if ($siteHandle) {
+                    $browseQuery->site($siteHandle);
+                }
 
                 if ($status === 'any') {
                     $browseQuery->drafts(null);
                 } elseif ($status === 'draft') {
                     $browseQuery->drafts(true);
-                }
-
-                if ($sectionHandle) {
-                    $browseQuery->section($sectionHandle);
                 }
 
                 $browseCount = $browseQuery->count();
@@ -149,11 +176,16 @@ class SearchEntriesTool implements ToolInterface
             if ($status !== 'any') {
                 $anyStatusQuery = Entry::find()
                     ->status(null)
-                    ->drafts(null)
-                    ->sectionId($allowedSectionIds);
+                    ->drafts(null);
 
                 if ($sectionHandle) {
-                    $anyStatusQuery = $anyStatusQuery->section($sectionHandle);
+                    $anyStatusQuery->section($sectionHandle);
+                } else {
+                    $anyStatusQuery->sectionId($allowedSectionIds);
+                }
+
+                if ($siteHandle) {
+                    $anyStatusQuery->site($siteHandle);
                 }
 
                 $anyStatusCount = $anyStatusQuery->count();

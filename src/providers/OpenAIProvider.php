@@ -5,6 +5,7 @@ namespace samuelreichor\coPilot\providers;
 use Craft;
 use craft\helpers\App;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\helpers\HttpClientFactory;
 use samuelreichor\coPilot\helpers\Logger;
 use samuelreichor\coPilot\models\AIResponse;
 use samuelreichor\coPilot\models\StreamChunk;
@@ -174,7 +175,7 @@ class OpenAIProvider implements ProviderInterface
 
     private function sendRequest(string $apiKey, array $payload): AIResponse
     {
-        $client = Craft::createGuzzleClient();
+        $client = HttpClientFactory::create();
 
         try {
             $response = $client->post(self::API_URL, [
@@ -239,7 +240,7 @@ class OpenAIProvider implements ProviderInterface
      */
     private function sendStreamRequest(string $apiKey, array $payload, callable $onChunk): void
     {
-        $client = Craft::createGuzzleClient();
+        $client = HttpClientFactory::create();
         $buffer = '';
         /** @var array<int, array{id: string, name: string, arguments: string}> $toolCalls */
         $toolCalls = [];

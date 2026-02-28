@@ -15,7 +15,7 @@ class SearchAssetsTool implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Searches for assets (images, files) across allowed volumes. Call without a query to browse all available assets. Returns asset summaries with IDs that can be used in updateField or createEntry (pass as [assetId] array for asset fields).';
+        return 'Searches for assets (images, files) across allowed volumes. Call without a query to browse all available assets. Returns asset summaries with IDs that can be used in updateEntry or createEntry (pass as [assetId] array for asset fields).';
     }
 
     public function getParameters(): array

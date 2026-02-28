@@ -138,6 +138,44 @@ class ChatController extends Controller
     }
 
     /**
+     * POST /actions/co-pilot/chat/export-debug
+     * Downloads the full debug log for a conversation as JSON.
+     */
+    public function actionExportDebug(): Response
+    {
+        $this->requirePostRequest();
+        $this->requireAcceptsJson();
+
+        $id = $this->request->getRequiredBodyParam('id');
+        $conversation = $this->getConversation((int)$id);
+
+        // Fetch audit log entries for this conversation
+        $auditLog = (new \craft\db\Query())
+            ->from(Constants::TABLE_AUDIT_LOG)
+            ->where(['conversationId' => $conversation->id])
+            ->orderBy(['dateCreated' => SORT_ASC])
+            ->all();
+
+        $user = Craft::$app->getUser()->getIdentity();
+
+        $export = [
+            'meta' => [
+                'conversationId' => $conversation->id,
+                'title' => $conversation->title,
+                'userId' => $conversation->userId,
+                'contextType' => $conversation->contextType,
+                'contextId' => $conversation->contextId,
+                'exportedAt' => (new \DateTimeImmutable())->format('c'),
+                'exportedBy' => $user ? $user->username : null,
+            ],
+            'turns' => $conversation->debugLog,
+            'auditLog' => $auditLog,
+        ];
+
+        return $this->asJson($export);
+    }
+
+    /**
      * GET /actions/co-pilot/chat/open-element?elementId=123
      * Redirects to the element's CP edit URL.
      */
@@ -286,13 +324,18 @@ class ChatController extends Controller
         $conversationId = $this->persistConversation(
             $conversationId ? (int)$conversationId : null,
             $message,
-            $result['text'] ?? null,
+            $result['text'],
             $persistContextType,
             $persistContextId,
+            $result['debug'],
+            $result['inputTokens'],
+            $result['outputTokens'],
         );
 
         $plugin->auditService->linkToConversation($conversationId);
 
+        // Remove debug data from the client response
+        unset($result['debug']);
         $result['conversationId'] = $conversationId;
 
         return $this->asJson($result);
@@ -367,9 +410,12 @@ class ChatController extends Controller
         $conversationId = $this->persistConversation(
             $conversationId ? (int)$conversationId : null,
             $message,
-            $result['text'] ?? null,
+            $result['text'],
             $persistContextType,
             $persistContextId,
+            $result['debug'],
+            $result['inputTokens'],
+            $result['outputTokens'],
         );
 
         $plugin->auditService->linkToConversation($conversationId);
@@ -400,7 +446,12 @@ class ChatController extends Controller
 
     private function endSSE(): void
     {
-        Craft::$app->end();
+        try {
+            Craft::$app->end();
+        } catch (\yii\web\HeadersAlreadySentException) { // @phpstan-ignore catch.neverThrown
+            // Expected for SSE — headers were already sent via header()
+            exit;
+        }
     }
 
     /**
@@ -428,12 +479,18 @@ class ChatController extends Controller
         return $conversation;
     }
 
+    /**
+     * @param array<string, mixed>|null $debug
+     */
     private function persistConversation(
         ?int $conversationId,
         string $userMessage,
         ?string $assistantResponse,
         string $contextType,
         ?int $contextId,
+        ?array $debug = null,
+        int $inputTokens = 0,
+        int $outputTokens = 0,
     ): ?int {
         $user = Craft::$app->getUser()->getIdentity();
         if (!$user) {
@@ -466,6 +523,10 @@ class ChatController extends Controller
                 role: MessageRole::Assistant,
                 content: $assistantResponse,
             ));
+        }
+
+        if ($debug !== null) {
+            $conversation->addDebugTurn($debug, $inputTokens, $outputTokens);
         }
 
         try {

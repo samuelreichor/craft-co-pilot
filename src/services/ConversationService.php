@@ -24,6 +24,7 @@ class ConversationService extends Component
         $tableSchema = Craft::$app->getDb()->getSchema()->getTableSchema(Constants::TABLE_CONVERSATIONS);
         $messagesDbType = $tableSchema->columns['messages']->dbType ?? null;
         $messages = Db::prepareValueForDb($conversation->getMessagesArray(), $messagesDbType);
+        $debugLog = !empty($conversation->debugLog) ? json_encode($conversation->debugLog) : null;
 
         if ($conversation->id) {
             Craft::$app->getDb()->createCommand()->update(
@@ -31,6 +32,7 @@ class ConversationService extends Component
                 [
                     'title' => $conversation->title,
                     'messages' => $messages,
+                    'debugLog' => $debugLog,
                     'dateUpdated' => Db::prepareDateForDb(new \DateTime()),
                 ],
                 ['id' => $conversation->id],
@@ -47,6 +49,7 @@ class ConversationService extends Component
                 'contextType' => $conversation->contextType,
                 'contextId' => $conversation->contextId,
                 'messages' => $messages,
+                'debugLog' => $debugLog,
                 'dateCreated' => Db::prepareDateForDb(new \DateTime()),
                 'dateUpdated' => Db::prepareDateForDb(new \DateTime()),
                 'uid' => StringHelper::UUID(),
@@ -209,6 +212,9 @@ class ConversationService extends Component
                 // Skip invalid messages from legacy data
             }
         }
+
+        $debugLog = json_decode($row['debugLog'] ?? '[]', true);
+        $conversation->debugLog = is_array($debugLog) ? $debugLog : [];
 
         return $conversation;
     }

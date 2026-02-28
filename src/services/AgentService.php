@@ -12,11 +12,12 @@ use samuelreichor\coPilot\enums\MessageRole;
 use samuelreichor\coPilot\events\RegisterToolsEvent;
 use samuelreichor\coPilot\events\ToolCallEvent;
 use samuelreichor\coPilot\helpers\Logger;
-use samuelreichor\coPilot\models\AIResponse;
 use samuelreichor\coPilot\models\Message;
+use samuelreichor\coPilot\models\Settings;
 use samuelreichor\coPilot\models\StreamChunk;
-use samuelreichor\coPilot\providers\ProviderInterface;
 use samuelreichor\coPilot\tools\CreateEntryTool;
+use samuelreichor\coPilot\tools\DescribeEntryTypeTool;
+use samuelreichor\coPilot\tools\DescribeSectionTool;
 use samuelreichor\coPilot\tools\ListSectionsTool;
 use samuelreichor\coPilot\tools\ReadAssetTool;
 use samuelreichor\coPilot\tools\ReadEntryTool;
@@ -26,7 +27,6 @@ use samuelreichor\coPilot\tools\SearchTagsTool;
 use samuelreichor\coPilot\tools\SearchUsersTool;
 use samuelreichor\coPilot\tools\ToolInterface;
 use samuelreichor\coPilot\tools\UpdateEntryTool;
-use samuelreichor\coPilot\tools\UpdateFieldTool;
 
 /**
  * Orchestrates the AI agent loop: prompt building, provider calls, tool execution.
@@ -40,12 +40,14 @@ class AgentService extends Component
     /** @var ToolInterface[]|null */
     private ?array $tools = null;
 
+    private ?string $activeSiteHandle = null;
+
     /**
      * Handles a user message and returns the AI response.
      *
      * @param Message[] $conversationHistory
      * @param array<int, array<string, mixed>> $attachments
-     * @return array{text: string|null, toolCalls: array<int, array<string, mixed>>|null, inputTokens: int, outputTokens: int}
+     * @return array{text: string|null, toolCalls: array<int, array<string, mixed>>|null, inputTokens: int, outputTokens: int, debug: array<string, mixed>}
      */
     public function handleMessage(
         string $userMessage,
@@ -67,6 +69,7 @@ class AgentService extends Component
         }
 
         $site = $this->resolveSite($siteHandle, $contextEntry);
+        $this->activeSiteHandle = $site?->handle;
         $systemPrompt = $plugin->systemPromptBuilder->build($contextEntry, $site);
 
         // Enrich user message with resolved attachment context
@@ -79,6 +82,7 @@ class AgentService extends Component
         $toolDefs = $this->getToolDefinitions();
 
         // Get provider
+        $settings = $plugin->getSettings();
         $provider = $plugin->providerService->getActiveProvider();
 
         $totalInputTokens = 0;
@@ -105,6 +109,7 @@ class AgentService extends Component
                     'toolCalls' => $executedToolCalls !== [] ? $executedToolCalls : null,
                     'inputTokens' => $totalInputTokens,
                     'outputTokens' => $totalOutputTokens,
+                    'debug' => $this->buildDebugPayload($systemPrompt, $model, $settings, $messages, $iteration),
                 ];
             }
 
@@ -122,6 +127,7 @@ class AgentService extends Component
                     'toolCalls' => $executedToolCalls !== [] ? $executedToolCalls : null,
                     'inputTokens' => $totalInputTokens,
                     'outputTokens' => $totalOutputTokens,
+                    'debug' => $this->buildDebugPayload($systemPrompt, $model, $settings, $messages, $iteration),
                 ];
             }
 
@@ -132,6 +138,7 @@ class AgentService extends Component
                     'role' => MessageRole::Assistant->value,
                     'content' => $response->text,
                     'toolCalls' => $response->toolCalls,
+                    'rawModelParts' => $response->rawModelParts,
                 ];
 
                 // Execute each tool call
@@ -163,6 +170,7 @@ class AgentService extends Component
             'toolCalls' => $executedToolCalls !== [] ? $executedToolCalls : null,
             'inputTokens' => $totalInputTokens,
             'outputTokens' => $totalOutputTokens,
+            'debug' => $this->buildDebugPayload($systemPrompt, $model, $settings, $messages, $iteration),
         ];
     }
 
@@ -172,7 +180,7 @@ class AgentService extends Component
      * @param Message[] $conversationHistory
      * @param callable(string, array<string, mixed>): void $emit Emits SSE events
      * @param array<int, array<string, mixed>> $attachments
-     * @return array{text: string|null, inputTokens: int, outputTokens: int}
+     * @return array{text: string|null, inputTokens: int, outputTokens: int, debug: array<string, mixed>}
      */
     public function handleMessageStream(
         string $userMessage,
@@ -194,6 +202,7 @@ class AgentService extends Component
         }
 
         $site = $this->resolveSite($siteHandle, $contextEntry);
+        $this->activeSiteHandle = $site?->handle;
         $systemPrompt = $plugin->systemPromptBuilder->build($contextEntry, $site);
 
         // Enrich user message with resolved attachment context
@@ -201,6 +210,7 @@ class AgentService extends Component
 
         $messages = $this->buildMessagesArray($conversationHistory, $userMessage);
         $toolDefs = $this->getToolDefinitions();
+        $settings = $plugin->getSettings();
         $provider = $plugin->providerService->getActiveProvider();
 
         $totalInputTokens = 0;
@@ -208,7 +218,8 @@ class AgentService extends Component
         $fullText = '';
         $iteration = 0;
         $hasFallenBack = false;
-        $maxIterations = $plugin->getSettings()->maxAgentIterations;
+        $hadStreamError = false;
+        $maxIterations = $settings->maxAgentIterations;
 
         while ($iteration < $maxIterations) {
             $iteration++;
@@ -219,13 +230,15 @@ class AgentService extends Component
             $iterationText = '';
             $iterationToolCalls = [];
             $iterationHadError = false;
+            /** @var array<int, array<string, mixed>>|null $iterationRawModelParts */
+            $iterationRawModelParts = null;
 
             $provider->chatStream(
                 $systemPrompt,
                 $messages,
                 $toolDefs,
                 $model,
-                function(StreamChunk $chunk) use (&$iterationText, &$iterationToolCalls, &$totalInputTokens, &$totalOutputTokens, &$iterationHadError, $emit): void {
+                function(StreamChunk $chunk) use (&$iterationText, &$iterationToolCalls, &$totalInputTokens, &$totalOutputTokens, &$iterationHadError, &$iterationRawModelParts, $emit): void {
                     switch ($chunk->type) {
                         case 'thinking':
                             $emit('thinking', ['delta' => $chunk->delta]);
@@ -241,6 +254,9 @@ class AgentService extends Component
                                 'arguments' => $chunk->toolArguments ?? [],
                             ];
                             break;
+                        case 'model_parts':
+                            $iterationRawModelParts = $chunk->rawModelParts;
+                            break;
                         case 'usage':
                             $totalInputTokens += $chunk->inputTokens;
                             $totalOutputTokens += $chunk->outputTokens;
@@ -253,26 +269,20 @@ class AgentService extends Component
                 },
             );
 
-            // If the stream returned nothing at all, fall back to non-streaming, then try alternate model
-            if ($iterationText === '' && empty($iterationToolCalls) && !$iterationHadError && !$hasFallenBack) {
+            // Stream error — stop immediately, error was already emitted to the client
+            if ($iterationHadError) {
+                $hadStreamError = true;
+                break;
+            }
+
+            // If the stream returned nothing, retry once with non-streaming (no alternate model — saves rate limit)
+            if ($iterationText === '' && empty($iterationToolCalls) && !$hasFallenBack) {
                 $hasFallenBack = true;
 
-                // 1. Try non-streaming with same model
                 Logger::warning("Stream returned empty response on iteration {$iteration}, falling back to non-streaming");
                 $fallbackResponse = $provider->chat($systemPrompt, $messages, $toolDefs, $model);
                 $totalInputTokens += $fallbackResponse->inputTokens;
                 $totalOutputTokens += $fallbackResponse->outputTokens;
-
-                // 2. If still empty, try a different model from the same provider
-                if ($this->isEmptyResponse($fallbackResponse)) {
-                    $altModel = $this->getAlternateModel($provider, $model);
-                    if ($altModel !== null) {
-                        Logger::warning("Model also returned empty via non-streaming, retrying with alternate model: {$altModel}");
-                        $fallbackResponse = $provider->chat($systemPrompt, $messages, $toolDefs, $altModel);
-                        $totalInputTokens += $fallbackResponse->inputTokens;
-                        $totalOutputTokens += $fallbackResponse->outputTokens;
-                    }
-                }
 
                 if ($fallbackResponse->type === 'error') {
                     $emit('error', ['message' => $fallbackResponse->error]);
@@ -302,6 +312,7 @@ class AgentService extends Component
                 'role' => MessageRole::Assistant->value,
                 'content' => $iterationText ?: null,
                 'toolCalls' => $iterationToolCalls,
+                'rawModelParts' => $iterationRawModelParts,
             ];
 
             foreach ($iterationToolCalls as $toolCall) {
@@ -328,7 +339,7 @@ class AgentService extends Component
 
                 $messages[] = [
                     'role' => MessageRole::Tool->value,
-                    'content' => $result,
+                    'content' => $this->truncateToolResult($result),
                     'toolCallId' => $toolCall['id'],
                     'toolName' => $toolCall['name'],
                     'isError' => !$success,
@@ -339,7 +350,7 @@ class AgentService extends Component
             $fullText .= '';
         }
 
-        if ($fullText === '') {
+        if ($fullText === '' && !$hadStreamError) {
             Logger::warning("handleMessageStream produced empty response after {$iteration} iterations, {$totalInputTokens} input / {$totalOutputTokens} output tokens");
 
             // Provide a clear user-facing message instead of silence
@@ -354,6 +365,7 @@ class AgentService extends Component
             'text' => $fullText ?: null,
             'inputTokens' => $totalInputTokens,
             'outputTokens' => $totalOutputTokens,
+            'debug' => $this->buildDebugPayload($systemPrompt, $model, $settings, $messages, $iteration),
         ];
     }
 
@@ -371,7 +383,6 @@ class AgentService extends Component
         $event = new RegisterToolsEvent();
         $event->tools = [
             new ReadEntryTool(),
-            new UpdateFieldTool(),
             new UpdateEntryTool(),
             new CreateEntryTool(),
             new SearchEntriesTool(),
@@ -379,6 +390,8 @@ class AgentService extends Component
             new SearchTagsTool(),
             new SearchUsersTool(),
             new ListSectionsTool(),
+            new DescribeSectionTool(),
+            new DescribeEntryTypeTool(),
             new ReadAssetTool(),
         ];
 
@@ -422,6 +435,11 @@ class AgentService extends Component
             return ['error' => "Unknown tool: {$toolName}"];
         }
 
+        // Inject active site handle so tools can scope queries to the current site
+        if ($this->activeSiteHandle !== null && !isset($arguments['_siteHandle'])) {
+            $arguments['_siteHandle'] = $this->activeSiteHandle;
+        }
+
         // Before-event: allow cancellation
         $beforeEvent = new ToolCallEvent();
         $beforeEvent->toolName = $toolName;
@@ -441,6 +459,7 @@ class AgentService extends Component
                 Logger::warning("Tool '{$toolName}' returned error: {$result['error']}");
             } else {
                 Logger::info("Tool '{$toolName}' executed successfully");
+                Logger::info("Tool '{$toolName}' result: " . mb_substr(json_encode($result), 0, 2000));
             }
         } catch (\Throwable $e) {
             Logger::error("Tool '{$toolName}' failed with exception: {$e->getMessage()}");
@@ -482,6 +501,30 @@ class AgentService extends Component
         }
 
         return 'Done. Completed: ' . implode(', ', $parts) . '.';
+    }
+
+    /**
+     * Builds the debug payload returned alongside agent results.
+     *
+     * @param array<int, array<string, mixed>> $messages
+     * @return array<string, mixed>
+     */
+    private function buildDebugPayload(
+        string $systemPrompt,
+        ?string $model,
+        Settings $settings,
+        array $messages,
+        int $iterations,
+    ): array {
+        $modelProperty = $settings->activeProvider . 'Model';
+
+        return [
+            'systemPrompt' => $systemPrompt,
+            'model' => $model ?? $settings->$modelProperty ?? null,
+            'provider' => $settings->activeProvider,
+            'messages' => $messages,
+            'iterations' => $iterations,
+        ];
     }
 
     private const MAX_ATTACHMENTS = 5;
@@ -611,21 +654,40 @@ class AgentService extends Component
         return null;
     }
 
-    private function isEmptyResponse(AIResponse $response): bool
-    {
-        return ($response->text === null || $response->text === '')
-            && ($response->toolCalls === null || $response->toolCalls === []);
-    }
+    private const MAX_TOOL_RESULT_LENGTH = 16000;
 
-    private function getAlternateModel(ProviderInterface $provider, ?string $currentModel): ?string
+    /**
+     * Truncates large tool results to prevent input token explosion across iterations.
+     * Each iteration re-sends the entire message history, so large tool results compound fast.
+     *
+     * @param array<string, mixed> $result
+     * @return array<string, mixed>
+     */
+    private function truncateToolResult(array $result): array
     {
-        $models = $provider->getAvailableModels();
-        foreach ($models as $model) {
-            if ($model !== $currentModel) {
-                return $model;
-            }
+        $encoded = json_encode($result);
+        if ($encoded === false || strlen($encoded) <= self::MAX_TOOL_RESULT_LENGTH) {
+            return $result;
         }
 
-        return null;
+        Logger::warning('Tool result truncated from ' . strlen($encoded) . ' to ' . self::MAX_TOOL_RESULT_LENGTH . ' chars — data may be incomplete');
+
+        // Truncate the JSON string and decode back to preserve structure
+        $truncated = mb_substr($encoded, 0, self::MAX_TOOL_RESULT_LENGTH);
+
+        // Try to decode; if it fails (truncated mid-JSON), wrap as string
+        $decoded = json_decode($truncated, true);
+        if ($decoded !== null) {
+            $decoded['_truncated'] = true;
+            $decoded['_truncatedNote'] = 'Result was truncated. Call the tool with more specific parameters to get complete data.';
+
+            return $decoded;
+        }
+
+        return [
+            '_truncated' => true,
+            '_truncatedNote' => 'Result was truncated. Call the tool with more specific parameters to get complete data.',
+            'summary' => mb_substr($truncated, 0, self::MAX_TOOL_RESULT_LENGTH),
+        ];
     }
 }

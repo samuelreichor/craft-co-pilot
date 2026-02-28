@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue';
 import { useModels } from './composables/useModels';
 import { useConversations } from './composables/useConversations';
+import { useDebugExport } from './composables/useDebugExport';
 import ConversationSidebar from './components/ConversationSidebar.vue';
 import HeaderActions from './components/HeaderActions.vue';
 import ChatPanel from './components/ChatPanel.vue';
@@ -18,6 +19,7 @@ const {
 } = useConversations(init.conversations || []);
 
 const chatPanel = ref<InstanceType<typeof ChatPanel> | null>(null);
+const { isExporting, exportDebug } = useDebugExport();
 
 function updateUrl(conversationId: number | null) {
   const path = conversationId ? `co-pilot/${conversationId}` : 'co-pilot';
@@ -61,6 +63,12 @@ function onConversationCreated(id: number) {
   updateUrl(id);
 }
 
+function handleExportDebug() {
+  if (activeConversationId.value) {
+    exportDebug(activeConversationId.value);
+  }
+}
+
 onMounted(() => {
   if (init.activeConversationId) {
     selectConversation(init.activeConversationId);
@@ -73,8 +81,11 @@ onMounted(() => {
     <HeaderActions
       :models="models"
       :current-model="currentModel"
+      :conversation-id="activeConversationId"
+      :is-exporting="isExporting"
       @update:current-model="currentModel = $event"
       @new-chat="newChat"
+      @export-debug="handleExportDebug"
     />
   </Teleport>
   <Teleport to="#co-pilot-sidebar-mount">

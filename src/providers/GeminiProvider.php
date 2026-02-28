@@ -5,6 +5,7 @@ namespace samuelreichor\coPilot\providers;
 use Craft;
 use craft\helpers\App;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\helpers\HttpClientFactory;
 use samuelreichor\coPilot\helpers\Logger;
 use samuelreichor\coPilot\models\AIResponse;
 use samuelreichor\coPilot\models\StreamChunk;
@@ -147,6 +148,17 @@ class GeminiProvider implements ProviderInterface
             }
 
             if ($role === 'assistant' && !empty($message['toolCalls'])) {
+                // Gemini 3 requires thought signatures to be circulated back verbatim.
+                // Use raw model parts when available to preserve them.
+                if (!empty($message['rawModelParts'])) {
+                    $formatted[] = [
+                        'role' => 'model',
+                        'parts' => $message['rawModelParts'],
+                    ];
+                    continue;
+                }
+
+                // Fallback: reconstruct parts (Gemini 2.x or conversation history from frontend)
                 $parts = [];
 
                 if (!empty($message['content'])) {
@@ -187,7 +199,7 @@ class GeminiProvider implements ProviderInterface
 
     private function sendRequest(string $apiKey, string $model, array $payload): AIResponse
     {
-        $client = Craft::createGuzzleClient();
+        $client = HttpClientFactory::create();
         $url = self::API_BASE . $model . ':generateContent';
 
         try {
@@ -203,6 +215,18 @@ class GeminiProvider implements ProviderInterface
             $data = json_decode($response->getBody()->getContents(), true);
 
             return $this->parseResponse($data);
+        } catch (\GuzzleHttp\Exception\RequestException $e) {
+            $errorMsg = 'Gemini API error: ' . $e->getMessage();
+
+            $response = $e->getResponse();
+            if ($response !== null) {
+                $body = (string)$response->getBody();
+                $errorMsg .= ' | Response: ' . mb_substr($body, 0, 500);
+            }
+
+            Logger::error($errorMsg);
+
+            return AIResponse::error($errorMsg);
         } catch (\Throwable $e) {
             Logger::error('Gemini API error: ' . $e->getMessage());
 
@@ -247,14 +271,29 @@ class GeminiProvider implements ProviderInterface
         // Recover from MALFORMED_FUNCTION_CALL: Gemini sometimes generates Python-style
         // calls like print(default_api.updateEntry(entryId=238, fields={...})) instead of
         // structured functionCall parts. Parse the text to extract the intended tool call.
-        if ($finishReason === 'MALFORMED_FUNCTION_CALL' && empty($toolCalls) && $text !== null) {
-            $recovered = $this->parseMalformedFunctionCall($text);
-            if ($recovered !== null) {
-                Logger::info('Gemini MALFORMED_FUNCTION_CALL recovered: ' . $recovered['name']);
-                $toolCalls[] = $recovered;
-                $text = null;
-            } else {
-                Logger::warning('Gemini MALFORMED_FUNCTION_CALL could not be recovered from text: ' . mb_substr($text, 0, 300));
+        // The function call may appear in the response text or in the candidate's finishMessage.
+        if ($finishReason === 'MALFORMED_FUNCTION_CALL' && empty($toolCalls)) {
+            $recoverSource = $text;
+
+            // Also check finishMessage when text is empty (zero-part responses)
+            if ($recoverSource === null && isset($candidate['finishMessage'])) {
+                $recoverSource = $candidate['finishMessage'];
+                // Strip "Malformed function call: " prefix if present
+                $prefix = 'Malformed function call: ';
+                if (str_starts_with($recoverSource, $prefix)) {
+                    $recoverSource = substr($recoverSource, strlen($prefix));
+                }
+            }
+
+            if ($recoverSource !== null) {
+                $recovered = $this->parseMalformedFunctionCall($recoverSource);
+                if ($recovered !== null) {
+                    Logger::info('Gemini MALFORMED_FUNCTION_CALL recovered: ' . $recovered['name']);
+                    $toolCalls[] = $recovered;
+                    $text = null;
+                } else {
+                    Logger::warning('Gemini MALFORMED_FUNCTION_CALL could not be recovered from text: ' . mb_substr($recoverSource, 0, 300));
+                }
             }
         }
 
@@ -269,7 +308,7 @@ class GeminiProvider implements ProviderInterface
         }
 
         if (!empty($toolCalls)) {
-            return AIResponse::toolCall($toolCalls, $text, $inputTokens, $outputTokens);
+            return AIResponse::toolCall($toolCalls, $text, $inputTokens, $outputTokens, $parts);
         }
 
         return AIResponse::text($text ?? '', $inputTokens, $outputTokens);
@@ -282,16 +321,18 @@ class GeminiProvider implements ProviderInterface
      */
     private function sendStreamRequest(string $apiKey, string $model, array $payload, callable $onChunk): void
     {
-        $client = Craft::createGuzzleClient();
+        $client = HttpClientFactory::create();
         $url = self::API_BASE . $model . ':streamGenerateContent?alt=sse';
         $buffer = '';
         $hasTextContent = false;
         $hasToolCalls = false;
         $finishReason = 'unknown';
         $chunksProcessed = 0;
+        /** @var array<int, array<string, mixed>> $rawModelParts Accumulated raw parts for thought signature circulation */
+        $rawModelParts = [];
 
         // Shared line processor for both streaming and buffer flush
-        $processLine = function(string $line) use (&$hasTextContent, &$hasToolCalls, &$finishReason, &$chunksProcessed, $onChunk): void {
+        $processLine = function(string $line) use (&$hasTextContent, &$hasToolCalls, &$finishReason, &$chunksProcessed, &$rawModelParts, $onChunk): void {
             $line = trim($line);
             if ($line === '' || !str_starts_with($line, 'data: ')) {
                 return;
@@ -311,7 +352,7 @@ class GeminiProvider implements ProviderInterface
                 $finishReason = $chunkFinishReason;
             }
 
-            // Track content types
+            // Track content types and accumulate raw parts for thought signature circulation
             $parts = $json['candidates'][0]['content']['parts'] ?? [];
             foreach ($parts as $part) {
                 if (isset($part['text']) && $part['text'] !== '') {
@@ -320,6 +361,7 @@ class GeminiProvider implements ProviderInterface
                 if (isset($part['functionCall'])) {
                     $hasToolCalls = true;
                 }
+                $rawModelParts[] = $part;
             }
 
             $this->processGeminiStreamChunk($json, $onChunk);
@@ -363,6 +405,23 @@ class GeminiProvider implements ProviderInterface
             if (!$hasTextContent && !$hasToolCalls) {
                 Logger::warning("Gemini stream returned no text and no tool calls: finish_reason={$finishReason}, chunks={$chunksProcessed}");
             }
+
+            // Emit accumulated raw model parts so thought signatures can be circulated (Gemini 3)
+            if ($hasToolCalls && !empty($rawModelParts)) {
+                $onChunk(new StreamChunk('model_parts', rawModelParts: $rawModelParts));
+            }
+        } catch (\GuzzleHttp\Exception\RequestException $e) {
+            $errorMsg = 'Gemini stream error: ' . $e->getMessage();
+
+            // Extract response body for detailed error logging
+            $response = $e->getResponse();
+            if ($response !== null) {
+                $body = (string)$response->getBody();
+                $errorMsg .= ' | Response: ' . mb_substr($body, 0, 500);
+            }
+
+            Logger::error($errorMsg);
+            $onChunk(new StreamChunk('error', error: $errorMsg));
         } catch (\Throwable $e) {
             Logger::error('Gemini stream error: ' . $e->getMessage());
             $onChunk(new StreamChunk('error', error: 'Gemini stream error: ' . $e->getMessage()));

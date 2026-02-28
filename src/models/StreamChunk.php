@@ -8,8 +8,9 @@ namespace samuelreichor\coPilot\models;
 class StreamChunk
 {
     /**
-     * @param 'thinking'|'text_delta'|'tool_call'|'error'|'usage' $type
+     * @param 'thinking'|'text_delta'|'tool_call'|'error'|'usage'|'model_parts' $type
      * @param array<string, mixed>|null $toolArguments
+     * @param array<int, array<string, mixed>>|null $rawModelParts Raw provider response parts (e.g. Gemini 3 thought signatures)
      */
     public function __construct(
         public readonly string $type,
@@ -20,6 +21,7 @@ class StreamChunk
         public readonly ?string $error = null,
         public readonly int $inputTokens = 0,
         public readonly int $outputTokens = 0,
+        public readonly ?array $rawModelParts = null,
     ) {
     }
 }

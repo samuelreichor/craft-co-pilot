@@ -12,9 +12,12 @@ use craft\fields\BaseOptionsField;
 use craft\fields\Categories as CategoriesField;
 use craft\fields\Color as ColorField;
 use craft\fields\ContentBlock as ContentBlockField;
+use craft\fields\data\JsonData;
 use craft\fields\Date as DateField;
 use craft\fields\Entries as EntriesField;
+use craft\fields\Json as JsonField;
 use craft\fields\Lightswitch as LightswitchField;
+use craft\fields\Link as LinkField;
 use craft\fields\Matrix as MatrixField;
 use craft\fields\Money as MoneyField;
 use craft\fields\Number as NumberField;
@@ -57,9 +60,18 @@ class EvalController extends Controller
      */
     public bool $all = false;
 
+    /**
+     * @var string|null Section handle for schema command.
+     */
+    public ?string $section = null;
+
     public function options($actionID): array
     {
         $options = parent::options($actionID);
+
+        if ($actionID === 'schema') {
+            $options[] = 'section';
+        }
 
         if ($actionID === 'export') {
             $options[] = 'entryId';
@@ -74,6 +86,32 @@ class EvalController extends Controller
         }
 
         return $options;
+    }
+
+    /**
+     * Dumps the listSections or describeSection output as JSON.
+     *
+     * Usage:
+     *   php craft co-pilot/eval/schema
+     *   php craft co-pilot/eval/schema --section=blog
+     */
+    public function actionSchema(): int
+    {
+        if (!$this->ensureAdminUser()) {
+            return ExitCode::NOPERM;
+        }
+
+        $schemaService = CoPilot::getInstance()->schemaService;
+
+        if ($this->section) {
+            $data = $schemaService->getSectionSchema($this->section);
+        } else {
+            $data = $schemaService->getAccessibleSchema();
+        }
+
+        $this->stdout(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n");
+
+        return ExitCode::OK;
     }
 
     /**
@@ -199,6 +237,14 @@ class EvalController extends Controller
             return ExitCode::UNSPECIFIED_ERROR;
         }
 
+        if (isset($result['fill'])) {
+            $this->printClearFillResults($result);
+            $allPassed = $result['fill']['passed'] === $result['fill']['total']
+                && $result['clear']['passed'] === $result['clear']['total'];
+
+            return $allPassed ? ExitCode::OK : ExitCode::UNSPECIFIED_ERROR;
+        }
+
         $this->printFieldResults($result);
 
         return $result['passed'] === $result['total'] ? ExitCode::OK : ExitCode::UNSPECIFIED_ERROR;
@@ -207,7 +253,7 @@ class EvalController extends Controller
     /**
      * Executes the current scenario and returns structured results.
      *
-     * @return array{passed: int, total: int, inputTokens: int, outputTokens: int, fieldResults: array<int, array{handle: string, pass: bool, detail: string}>}|null
+     * @return array<string, mixed>|null
      */
     private function executeScenario(Entry $entry): ?array
     {
@@ -254,7 +300,7 @@ class EvalController extends Controller
     }
 
     /**
-     * @return array{passed: int, total: int, inputTokens: int, outputTokens: int, fieldResults: array<int, array{handle: string, pass: bool, detail: string}>}|null
+     * @return array{fill: array{passed: int, total: int, fieldResults: array<int, array{handle: string, pass: bool, detail: string}>}, clear: array{passed: int, total: int, fieldResults: array<int, array{handle: string, pass: bool, detail: string}>}, inputTokens: int, outputTokens: int}|null
      */
     private function executeClearFill(Entry $entry): ?array
     {
@@ -262,8 +308,45 @@ class EvalController extends Controller
         $totalInput = 0;
         $totalOutput = 0;
 
-        // Phase 1: Clear
-        $this->stdout("Phase 1/2: Clearing all fields...\n");
+        // Phase 1: Programmatic reset (guaranteed clean slate)
+        $this->stdout("Phase 1/3: Resetting all fields (PHP)...\n");
+        if (!$this->resetEntryFields($entry)) {
+            $this->stderr("  Failed to reset entry fields.\n");
+
+            return null;
+        }
+
+        $entry = $this->reloadEntry();
+        if (!$entry) {
+            $this->stderr("Entry disappeared after reset.\n");
+
+            return null;
+        }
+        $this->stdout("  Reset complete.\n\n");
+
+        // Phase 2: AI Fill
+        $this->stdout("Phase 2/3: AI filling all fields...\n");
+        $fillMessage = "Fülle ALLE Felder des Eintrags #{$this->entryId} mit sinnvollen, realistischen Testdaten. "
+            . 'Nutze die verfügbaren Assets, Entries, Tags und User. Überspringe kein Feld.';
+        $fillResult = $plugin->agentService->handleMessage($fillMessage, $this->entryId, [], $this->model);
+        $totalInput += $fillResult['inputTokens'];
+        $totalOutput += $fillResult['outputTokens'];
+        $this->stdout("  Fill completed ({$fillResult['inputTokens']} input / {$fillResult['outputTokens']} output tokens)\n\n");
+
+        $entry = $this->reloadEntry();
+        if (!$entry) {
+            $this->stderr("Entry disappeared after fill phase.\n");
+
+            return null;
+        }
+
+        $fillFieldResults = $this->compareFields($entry, null, null, 'fill');
+        $fillPassed = count(array_filter($fillFieldResults, fn($r) => $r['pass']));
+        $fillTotal = count($fillFieldResults);
+        $this->stdout("  Fill score: {$fillPassed}/{$fillTotal}\n\n");
+
+        // Phase 3: AI Clear
+        $this->stdout("Phase 3/3: AI clearing all fields...\n");
         $clearResult = $plugin->agentService->handleMessage(
             "Leere alle bearbeitbaren Felder des Eintrags #{$this->entryId}.",
             $this->entryId,
@@ -281,33 +364,50 @@ class EvalController extends Controller
             return null;
         }
 
-        // Phase 2: Fill
-        $this->stdout("Phase 2/2: Filling all fields...\n");
-        $fillMessage = "Fülle ALLE Felder des Eintrags #{$this->entryId} mit sinnvollen, realistischen Testdaten. "
-            . 'Nutze die verfügbaren Assets, Entries, Tags und User. Überspringe kein Feld.';
-        $fillResult = $plugin->agentService->handleMessage($fillMessage, $this->entryId, [], $this->model);
-        $totalInput += $fillResult['inputTokens'];
-        $totalOutput += $fillResult['outputTokens'];
-        $this->stdout("  Fill completed ({$fillResult['inputTokens']} input / {$fillResult['outputTokens']} output tokens)\n\n");
-
-        $entry = $this->reloadEntry();
-        if (!$entry) {
-            $this->stderr("Entry disappeared after fill phase.\n");
-
-            return null;
-        }
-
-        $afterState = $plugin->contextService->serializeEntry($entry);
-        $fieldResults = $this->compareFields($entry, null, $afterState, 'fill');
-        $passed = count(array_filter($fieldResults, fn($r) => $r['pass']));
+        $clearFieldResults = $this->compareFields($entry, null, null, 'clear');
+        $clearPassed = count(array_filter($clearFieldResults, fn($r) => $r['pass']));
+        $clearTotal = count($clearFieldResults);
+        $this->stdout("  Clear score: {$clearPassed}/{$clearTotal}\n\n");
 
         return [
-            'passed' => $passed,
-            'total' => count($fieldResults),
+            'fill' => ['passed' => $fillPassed, 'total' => $fillTotal, 'fieldResults' => $fillFieldResults],
+            'clear' => ['passed' => $clearPassed, 'total' => $clearTotal, 'fieldResults' => $clearFieldResults],
             'inputTokens' => $totalInput,
             'outputTokens' => $totalOutput,
-            'fieldResults' => $fieldResults,
         ];
+    }
+
+    /**
+     * Programmatically resets all custom fields to empty values.
+     */
+    private function resetEntryFields(Entry $entry): bool
+    {
+        $registry = CoPilot::getInstance()->transformerRegistry;
+
+        foreach ($registry->resolveFieldLayoutFields($entry->getFieldLayout()) as $resolved) {
+            $field = $resolved['field'];
+            $handle = $resolved['handle'];
+
+            $emptyValue = match (true) {
+                $field instanceof MatrixField,
+                $field instanceof AssetsField,
+                $field instanceof EntriesField,
+                $field instanceof CategoriesField,
+                $field instanceof TagsField,
+                $field instanceof UsersField,
+                $field instanceof AddressesField,
+                $field instanceof TableField => [],
+                default => null,
+            };
+
+            try {
+                $entry->setFieldValue($handle, $emptyValue);
+            } catch (\Throwable) {
+                // Skip fields that can't be set
+            }
+        }
+
+        return Craft::$app->getElements()->saveElement($entry);
     }
 
     /**
@@ -324,8 +424,9 @@ class EvalController extends Controller
         $this->stdout("Entry: \"{$entry->title}\" (ID: {$entry->id}, Type: {$entry->getType()->handle})\n");
         $this->stdout(str_repeat('=', 50) . "\n\n");
 
-        /** @var array<int, array{provider: string, model: string, passed: int, total: int, inputTokens: int, outputTokens: int, failed: array<string>}> $matrix */
+        /** @var array<int, array<string, mixed>> $matrix */
         $matrix = [];
+        $isClearFill = $this->scenario === 'clear-fill';
 
         foreach ($providers as $handle => $provider) {
             $settings->activeProvider = $handle;
@@ -341,48 +442,72 @@ class EvalController extends Controller
                 $matrix[] = [
                     'provider' => $handle,
                     'model' => $model,
-                    'passed' => 0,
-                    'total' => 0,
                     'inputTokens' => 0,
                     'outputTokens' => 0,
-                    'failed' => ['ERROR'],
+                    'error' => true,
                 ];
 
                 continue;
             }
 
-            $failed = array_map(
-                fn($r) => $r['handle'],
-                array_filter($result['fieldResults'], fn($r) => !$r['pass']),
-            );
-
-            $matrix[] = [
+            $row = [
                 'provider' => $handle,
                 'model' => $model,
-                'passed' => $result['passed'],
-                'total' => $result['total'],
                 'inputTokens' => $result['inputTokens'],
                 'outputTokens' => $result['outputTokens'],
-                'failed' => array_values($failed),
             ];
 
-            $pct = $result['total'] > 0 ? round(($result['passed'] / $result['total']) * 100, 1) : 0;
-            $this->stdout("  Result: {$result['passed']}/{$result['total']} ({$pct}%)\n\n");
+            if ($isClearFill) {
+                $row['fillPassed'] = $result['fill']['passed'];
+                $row['fillTotal'] = $result['fill']['total'];
+                $row['clearPassed'] = $result['clear']['passed'];
+                $row['clearTotal'] = $result['clear']['total'];
+                $row['fillFailed'] = array_values(array_map(
+                    fn($r) => $r['handle'],
+                    array_filter($result['fill']['fieldResults'], fn($r) => !$r['pass']),
+                ));
+                $row['clearFailed'] = array_values(array_map(
+                    fn($r) => $r['handle'],
+                    array_filter($result['clear']['fieldResults'], fn($r) => !$r['pass']),
+                ));
+            } else {
+                $row['passed'] = $result['passed'];
+                $row['total'] = $result['total'];
+                $row['failed'] = array_values(array_map(
+                    fn($r) => $r['handle'],
+                    array_filter($result['fieldResults'], fn($r) => !$r['pass']),
+                ));
+            }
+
+            $matrix[] = $row;
         }
 
         // Restore original provider
         $settings->activeProvider = $originalProvider;
 
         // Print comparison table
-        $this->printComparisonTable($matrix);
+        if ($isClearFill) {
+            $this->printClearFillComparisonTable($matrix);
+        } else {
+            $this->printComparisonTable($matrix);
+        }
 
-        $allPassed = array_reduce($matrix, fn($carry, $r) => $carry && $r['passed'] === $r['total'], true);
+        $allPassed = array_reduce($matrix, function($carry, $r) use ($isClearFill) {
+            if (isset($r['error'])) {
+                return false;
+            }
+            if ($isClearFill) {
+                return $carry && $r['fillPassed'] === $r['fillTotal'] && $r['clearPassed'] === $r['clearTotal'];
+            }
+
+            return $carry && $r['passed'] === $r['total'];
+        }, true);
 
         return $allPassed ? ExitCode::OK : ExitCode::UNSPECIFIED_ERROR;
     }
 
     /**
-     * Prints field results for a single run.
+     * Prints field results for a single-scenario run.
      *
      * @param array{passed: int, total: int, inputTokens: int, outputTokens: int, fieldResults: array<int, array{handle: string, pass: bool, detail: string}>} $result
      */
@@ -400,9 +525,39 @@ class EvalController extends Controller
     }
 
     /**
-     * Prints a comparison table for matrix runs.
+     * Prints fill + clear results for a clear-fill run.
      *
-     * @param array<int, array{provider: string, model: string, passed: int, total: int, inputTokens: int, outputTokens: int, failed: array<string>}> $matrix
+     * @param array<string, mixed> $result
+     */
+    private function printClearFillResults(array $result): void
+    {
+        $fill = $result['fill'];
+        $clear = $result['clear'];
+
+        $fillPct = $fill['total'] > 0 ? round(($fill['passed'] / $fill['total']) * 100, 1) : 0;
+        $clearPct = $clear['total'] > 0 ? round(($clear['passed'] / $clear['total']) * 100, 1) : 0;
+
+        $this->stdout("Fill Results ({$fill['passed']}/{$fill['total']} — {$fillPct}%):\n");
+        foreach ($fill['fieldResults'] as $r) {
+            $status = $r['pass'] ? 'PASS' : 'FAIL';
+            $padding = str_repeat('.', max(1, 20 - strlen($r['handle'])));
+            $this->stdout("  [{$status}] {$r['handle']} {$padding} {$r['detail']}\n");
+        }
+
+        $this->stdout("\nClear Results ({$clear['passed']}/{$clear['total']} — {$clearPct}%):\n");
+        foreach ($clear['fieldResults'] as $r) {
+            $status = $r['pass'] ? 'PASS' : 'FAIL';
+            $padding = str_repeat('.', max(1, 20 - strlen($r['handle'])));
+            $this->stdout("  [{$status}] {$r['handle']} {$padding} {$r['detail']}\n");
+        }
+
+        $this->stdout("\n");
+    }
+
+    /**
+     * Prints a comparison table for single-scenario matrix runs.
+     *
+     * @param array<int, array<string, mixed>> $matrix
      */
     private function printComparisonTable(array $matrix): void
     {
@@ -410,25 +565,71 @@ class EvalController extends Controller
         $this->stdout("  COMPARISON\n");
         $this->stdout(str_repeat('=', 70) . "\n\n");
 
-        // Header
         $this->stdout(sprintf("  %-25s %-8s %-12s %s\n", 'Provider / Model', 'Score', 'Tokens', 'Failed'));
         $this->stdout('  ' . str_repeat('─', 65) . "\n");
 
         foreach ($matrix as $row) {
-            $pct = $row['total'] > 0 ? round(($row['passed'] / $row['total']) * 100, 1) : 0;
+            if (isset($row['error'])) {
+                $label = $this->truncateLabel("{$row['provider']} ({$row['model']})");
+                $this->stdout(sprintf("  %-25s %-8s %-12s %s\n", $label, 'ERROR', '—', '—'));
+
+                continue;
+            }
+
             $score = "{$row['passed']}/{$row['total']}";
             $tokens = number_format($row['inputTokens'] + $row['outputTokens']);
             $failedStr = empty($row['failed']) ? '—' : implode(', ', $row['failed']);
-            $label = "{$row['provider']} ({$row['model']})";
-
-            if (mb_strlen($label) > 25) {
-                $label = mb_substr($label, 0, 22) . '...';
-            }
+            $label = $this->truncateLabel("{$row['provider']} ({$row['model']})");
 
             $this->stdout(sprintf("  %-25s %-8s %-12s %s\n", $label, $score, $tokens, $failedStr));
         }
 
         $this->stdout("\n");
+    }
+
+    /**
+     * Prints a comparison table for clear-fill matrix runs with Fill + Clear columns.
+     *
+     * @param array<int, array<string, mixed>> $matrix
+     */
+    private function printClearFillComparisonTable(array $matrix): void
+    {
+        $this->stdout("\n" . str_repeat('=', 70) . "\n");
+        $this->stdout("  COMPARISON\n");
+        $this->stdout(str_repeat('=', 70) . "\n\n");
+
+        $this->stdout(sprintf("  %-25s %-8s %-8s %-10s %s\n", 'Provider / Model', 'Fill', 'Clear', 'Tokens', 'Failed'));
+        $this->stdout('  ' . str_repeat('─', 65) . "\n");
+
+        foreach ($matrix as $row) {
+            $label = $this->truncateLabel("{$row['provider']} ({$row['model']})");
+
+            if (isset($row['error'])) {
+                $this->stdout(sprintf("  %-25s %-8s %-8s %-10s %s\n", $label, 'ERR', 'ERR', '—', '—'));
+
+                continue;
+            }
+
+            $fill = "{$row['fillPassed']}/{$row['fillTotal']}";
+            $clear = "{$row['clearPassed']}/{$row['clearTotal']}";
+            $tokens = number_format($row['inputTokens'] + $row['outputTokens']);
+
+            $allFailed = array_merge($row['fillFailed'] ?? [], $row['clearFailed'] ?? []);
+            $failedStr = empty($allFailed) ? '—' : implode(', ', array_unique($allFailed));
+
+            $this->stdout(sprintf("  %-25s %-8s %-8s %-10s %s\n", $label, $fill, $clear, $tokens, $failedStr));
+        }
+
+        $this->stdout("\n");
+    }
+
+    private function truncateLabel(string $label): string
+    {
+        if (mb_strlen($label) > 25) {
+            return mb_substr($label, 0, 22) . '...';
+        }
+
+        return $label;
     }
 
     /**
@@ -490,6 +691,13 @@ class EvalController extends Controller
                 continue;
             }
 
+            // Expand Matrix block types for fill scenario
+            if ($mode === 'fill' && $field instanceof MatrixField) {
+                $results = array_merge($results, $this->compareMatrixFields($field, $value, $handle));
+
+                continue;
+            }
+
             $filled = $this->isFieldFilled($field, $value);
 
             $result = match ($mode) {
@@ -503,7 +711,7 @@ class EvalController extends Controller
                     'pass' => !$filled
                         || $this->isUnclearable($field)
                         || (property_exists($field, 'required') && $field->required),
-                    'detail' => $this->getClearDetail($field, $filled),
+                    'detail' => $this->getClearDetail($field, $filled, $value),
                 ],
                 default => [
                     'handle' => $handle,
@@ -557,6 +765,69 @@ class EvalController extends Controller
     }
 
     /**
+     * Expands a Matrix field into per-block-type, per-sub-field results for the fill scenario.
+     *
+     * @return array<int, array{handle: string, pass: bool, detail: string}>
+     */
+    private function compareMatrixFields(MatrixField $field, mixed $value, string $parentHandle): array
+    {
+        $results = [];
+        $registry = CoPilot::getInstance()->transformerRegistry;
+
+        $blocks = $value->all();
+
+        // Group blocks by entry type handle
+        $blocksByType = [];
+        foreach ($blocks as $block) {
+            $blocksByType[$block->getType()->handle][] = $block;
+        }
+
+        // Check each allowed entry type in the matrix
+        foreach ($field->getEntryTypes() as $entryType) {
+            $typeHandle = $entryType->handle;
+
+            if (!isset($blocksByType[$typeHandle])) {
+                $results[] = [
+                    'handle' => $parentHandle . '.' . $typeHandle,
+                    'pass' => false,
+                    'detail' => 'no block of this type',
+                ];
+
+                continue;
+            }
+
+            // Check sub-fields of the first block of this type
+            $block = $blocksByType[$typeHandle][0];
+            $fieldLayout = $block->getFieldLayout();
+
+            if (!$fieldLayout) {
+                $results[] = [
+                    'handle' => $parentHandle . '.' . $typeHandle,
+                    'pass' => true,
+                    'detail' => count($blocksByType[$typeHandle]) . ' block(s)',
+                ];
+
+                continue;
+            }
+
+            foreach ($registry->resolveFieldLayoutFields($fieldLayout) as $resolved) {
+                $subField = $resolved['field'];
+                $subHandle = $resolved['handle'];
+                $subValue = $block->getFieldValue($subHandle);
+                $filled = $this->isFieldFilled($subField, $subValue);
+
+                $results[] = [
+                    'handle' => $parentHandle . '.' . $typeHandle . '.' . $subHandle,
+                    'pass' => $filled,
+                    'detail' => $filled ? $this->describeValue($subField, $subValue) : 'empty',
+                ];
+            }
+        }
+
+        return $results;
+    }
+
+    /**
      * Checks if a field value is considered "filled" based on field type.
      */
     private function isFieldFilled(mixed $field, mixed $value): bool
@@ -585,7 +856,27 @@ class EvalController extends Controller
         }
 
         if ($field instanceof MoneyField) {
+            if ($value instanceof \Money\Money) {
+                return $value->getAmount() !== '0';
+            }
+
             return $value !== null;
+        }
+
+        if ($field instanceof JsonField) {
+            if ($value instanceof JsonData) {
+                return !empty($value->getValue());
+            }
+
+            return !empty($value);
+        }
+
+        if ($field instanceof LinkField) {
+            if ($value instanceof \craft\fields\data\LinkData) {
+                return $value->getUrl() !== null && $value->getUrl() !== '';
+            }
+
+            return !empty($value);
         }
 
         if ($field instanceof DateField || $field instanceof TimeField) {
@@ -632,10 +923,14 @@ class EvalController extends Controller
             return true;
         }
 
+        if ($field instanceof RangeField) {
+            return true;
+        }
+
         return false;
     }
 
-    private function getClearDetail(mixed $field, bool $filled): string
+    private function getClearDetail(mixed $field, bool $filled, mixed $value = null): string
     {
         if (!$filled) {
             return 'cleared';
@@ -645,11 +940,13 @@ class EvalController extends Controller
             return 'skipped (unclearable)';
         }
 
+        $detail = $this->describeValue($field, $value);
+
         if (property_exists($field, 'required') && $field->required) {
-            return 'still set (required)';
+            return "still set (required): {$detail}";
         }
 
-        return 'still set';
+        return "still set: {$detail}";
     }
 
     /**
@@ -681,7 +978,27 @@ class EvalController extends Controller
         }
 
         if ($field instanceof MoneyField && $value instanceof \Money\Money) {
-            return $value->getAmount() . ' ' . $value->getCurrency()->getCode();
+            $amount = $value->getAmount();
+            if ($amount === '0') {
+                return '0 (zero) ' . $value->getCurrency()->getCode();
+            }
+
+            return $amount . ' ' . $value->getCurrency()->getCode();
+        }
+
+        if ($field instanceof JsonField) {
+            if ($value instanceof JsonData) {
+                $data = $value->getValue();
+                if (empty($data)) {
+                    return 'empty JSON';
+                }
+
+                $json = json_encode($data);
+
+                return '"' . mb_substr((string)$json, 0, 50) . '"';
+            }
+
+            return is_array($value) ? json_encode($value) : 'set';
         }
 
         if ($field instanceof DateField && $value instanceof \DateTimeInterface) {
@@ -705,6 +1022,19 @@ class EvalController extends Controller
         }
 
         if ($field instanceof ContentBlockField) {
+            if ($value instanceof \craft\elements\ContentBlock) {
+                $registry = CoPilot::getInstance()->transformerRegistry;
+                $filledSubs = [];
+                foreach ($registry->resolveFieldLayoutFields($field->getFieldLayout()) as $resolved) {
+                    $subValue = $value->getFieldValue($resolved['handle']);
+                    if ($this->isFieldFilled($resolved['field'], $subValue)) {
+                        $filledSubs[] = $resolved['handle'];
+                    }
+                }
+
+                return empty($filledSubs) ? 'empty' : 'has: ' . implode(', ', $filledSubs);
+            }
+
             return 'set';
         }
 
