@@ -55,6 +55,7 @@ class AgentService extends Component
         ?string $model = null,
         array $attachments = [],
         ?string $siteHandle = null,
+        ?string $executionMode = null,
     ): array {
         $plugin = CoPilot::getInstance();
 
@@ -68,7 +69,7 @@ class AgentService extends Component
 
         $site = $this->resolveSite($siteHandle, $contextEntry);
         $this->activeSiteHandle = $site?->handle;
-        $systemPrompt = $plugin->systemPromptBuilder->build($contextEntry, $site);
+        $systemPrompt = $plugin->systemPromptBuilder->build($contextEntry, $site, $executionMode);
 
         $userMessage = $this->enrichMessageWithAttachments($userMessage, $attachments);
 
@@ -198,6 +199,7 @@ class AgentService extends Component
         callable $emit,
         array $attachments = [],
         ?string $siteHandle = null,
+        ?string $executionMode = null,
     ): array {
         $plugin = CoPilot::getInstance();
 
@@ -211,7 +213,7 @@ class AgentService extends Component
 
         $site = $this->resolveSite($siteHandle, $contextEntry);
         $this->activeSiteHandle = $site?->handle;
-        $systemPrompt = $plugin->systemPromptBuilder->build($contextEntry, $site);
+        $systemPrompt = $plugin->systemPromptBuilder->build($contextEntry, $site, $executionMode);
 
         $userMessage = $this->enrichMessageWithAttachments($userMessage, $attachments);
         $historyCount = count($conversationHistory);

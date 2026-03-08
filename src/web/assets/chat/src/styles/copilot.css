@@ -384,14 +384,8 @@
     margin-bottom: 8px;
 }
 
-.co-pilot-input__row {
-    display: flex;
-    align-items: flex-end;
-    gap: 8px;
-}
-
 .co-pilot-input__textarea {
-    flex: 1;
+    width: 100%;
     resize: none;
     border: 1px solid var(--gray-200);
     border-radius: var(--button-border-radius);
@@ -401,6 +395,27 @@
     outline: none;
     min-height: 38px;
     max-height: 200px;
+    box-sizing: border-box;
+}
+
+.co-pilot-input__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 6px;
+    gap: 8px;
+}
+
+.co-pilot-input__toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.co-pilot-input__toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .co-pilot-input__add-wrap {
@@ -409,11 +424,12 @@
 }
 
 .co-pilot-input__add-btn {
-    width: 38px;
-    height: 38px;
+    width: 32px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 0;
 }
 
 .co-pilot-input__menu {
@@ -450,14 +466,21 @@
     border-top: 1px solid var(--gray-100);
 }
 
+.co-pilot-input__mode-select.select select,
+.co-pilot-input__model-select.select select {
+    font-size: 12px;
+    height: 32px;
+    padding: 0 24px 0 8px;
+}
+
 .co-pilot-input__send-btn.submit.btn {
-    width: 38px;
-    height: 38px;
+    width: 32px;
+    height: 32px;
 }
 
 .co-pilot-input__cancel-btn.btn {
-    width: 38px;
-    height: 38px;
+    width: 32px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;

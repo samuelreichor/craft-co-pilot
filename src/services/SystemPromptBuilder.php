@@ -6,6 +6,7 @@ use craft\base\Component;
 use craft\elements\Entry;
 use craft\models\Site;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\AgentExecutionMode;
 use samuelreichor\coPilot\events\BuildPromptEvent;
 
 /**
@@ -15,7 +16,7 @@ class SystemPromptBuilder extends Component
 {
     public const EVENT_BUILD_PROMPT = 'buildPrompt';
 
-    public function build(?Entry $contextEntry = null, ?Site $site = null): string
+    public function build(?Entry $contextEntry = null, ?Site $site = null, ?string $executionMode = null): string
     {
         $settings = CoPilot::getInstance()->getSettings();
         $sections = [];
@@ -155,17 +156,31 @@ class SystemPromptBuilder extends Component
             . "NEVER call createEntry a second time for the same purpose — one draft per intent.";
 
         // 11. Action hierarchy
-        $sections[] = "## Action Hierarchy\n"
-            . "**Execute directly** (no confirmation needed):\n"
-            . "- Reading entries, searching, listing sections\n"
-            . "- Single-field edits the user explicitly requested\n"
-            . "- Creating draft entries\n\n"
-            . "**Ask for confirmation first** (brief summary of what will change):\n"
-            . "- Updating more than 3 fields at once\n"
-            . "- Bulk changes across multiple entries\n"
-            . "- Destructive changes (clearing fields, replacing all Matrix blocks)\n"
-            . "- Any action where the user's intent is ambiguous\n\n"
-            . "After confirmation, execute without further commentary — just do it and report results.";
+        $executionMode = AgentExecutionMode::tryFrom($executionMode ?? $settings->agentExecutionMode)
+            ?? AgentExecutionMode::Supervised;
+
+        if ($executionMode === AgentExecutionMode::Autonomous) {
+            $sections[] = "## Action Hierarchy\n"
+                . "**Execute ALL actions directly** — never ask for confirmation, never pause for approval.\n"
+                . "- Reading, searching, listing — execute immediately.\n"
+                . "- Single or multi-field edits — execute immediately.\n"
+                . "- Bulk changes across multiple entries — execute ALL of them in one go, do NOT stop halfway.\n"
+                . "- Destructive changes (clearing fields, replacing Matrix blocks) — execute immediately.\n"
+                . "- When the user asks you to do something, do it completely without asking follow-up questions.\n\n"
+                . "After completing all changes, give a concise summary of what changed.";
+        } else {
+            $sections[] = "## Action Hierarchy\n"
+                . "**Execute directly** (no confirmation needed):\n"
+                . "- Reading entries, searching, listing sections\n"
+                . "- Single-field edits the user explicitly requested\n"
+                . "- Creating draft entries\n\n"
+                . "**Ask for confirmation first** (brief summary of what will change):\n"
+                . "- Updating more than 3 fields at once\n"
+                . "- Bulk changes across multiple entries\n"
+                . "- Destructive changes (clearing fields, replacing all Matrix blocks)\n"
+                . "- Any action where the user's intent is ambiguous\n\n"
+                . "After confirmation, execute without further commentary — just do it and report results.";
+        }
 
         // 12. Error handling
         $sections[] = "## Error Handling\n"

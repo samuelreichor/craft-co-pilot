@@ -288,6 +288,7 @@ class ChatController extends Controller
         }
 
         $siteHandle = $this->request->getBodyParam('siteHandle');
+        $executionMode = $this->request->getBodyParam('executionMode');
 
         $result = $plugin
             ->agentService
@@ -298,6 +299,7 @@ class ChatController extends Controller
                 $model ?: null,
                 $attachments,
                 $siteHandle,
+                $executionMode,
             );
 
         $persistContextType = $contextType === 'entry' ? 'entry' : 'global';
@@ -355,6 +357,7 @@ class ChatController extends Controller
         $model = $body['model'] ?? null;
         $attachments = $body['attachments'] ?? [];
         $siteHandle = $body['siteHandle'] ?? null;
+        $executionMode = $body['executionMode'] ?? null;
 
         if ($message === '') {
             $this->sendSSE('error', ['message' => 'Message is required.']);
@@ -380,6 +383,7 @@ class ChatController extends Controller
                 },
                 $attachments,
                 $siteHandle,
+                $executionMode,
             );
 
         $persistContextType = $contextType === 'entry' ? 'entry' : 'global';

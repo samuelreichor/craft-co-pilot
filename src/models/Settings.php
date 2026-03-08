@@ -3,6 +3,7 @@
 namespace samuelreichor\coPilot\models;
 
 use craft\base\Model;
+use samuelreichor\coPilot\enums\AgentExecutionMode;
 use samuelreichor\coPilot\enums\ElementCreationBehavior;
 use samuelreichor\coPilot\enums\ElementUpdateBehavior;
 use samuelreichor\coPilot\enums\Provider;
@@ -73,6 +74,7 @@ class Settings extends Model
     public bool $debug = false;
 
     // Agent behavior
+    public string $agentExecutionMode = 'supervised';
     public int $maxAgentIterations = 10;
     public int $defaultSerializationDepth = 2;
     public int $maxSerializationDepth = 4;
@@ -101,6 +103,7 @@ class Settings extends Model
             [['openaiApiKeyEnvVar', 'anthropicApiKeyEnvVar', 'geminiApiKeyEnvVar'], 'string'],
             ['webSearchEnabled', 'boolean'],
             ['debug', 'boolean'],
+            ['agentExecutionMode', 'in', 'range' => array_column(AgentExecutionMode::cases(), 'value')],
             ['elementUpdateBehavior', 'in', 'range' => array_column(ElementUpdateBehavior::cases(), 'value')],
             ['elementCreationBehavior', 'in', 'range' => array_column(ElementCreationBehavior::cases(), 'value')],
         ];

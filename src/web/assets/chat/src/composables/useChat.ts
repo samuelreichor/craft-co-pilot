@@ -22,6 +22,7 @@ interface UseChatOptions {
   contextId?: number | null;
   model?: string;
   siteHandle?: string | null;
+  executionMode?: string;
   onConversationCreated?: (conversationId: number) => void;
 }
 
@@ -74,7 +75,7 @@ export function useChat(options: UseChatOptions) {
     finalizeStream();
   }
 
-  async function sendMessage(text: string, model?: string) {
+  async function sendMessage(text: string, model?: string, executionMode?: string) {
     if (isLoading.value) return;
 
     // Build full message with attachment prefix
@@ -118,7 +119,7 @@ export function useChat(options: UseChatOptions) {
     isLoading.value = true;
 
     // Try streaming first, fall back to legacy
-    sendStreaming(fullMessage, sendContextId, model ?? options.model, attachmentPayloads);
+    sendStreaming(fullMessage, sendContextId, model ?? options.model, attachmentPayloads, executionMode);
   }
 
   function sendStreaming(
@@ -126,6 +127,7 @@ export function useChat(options: UseChatOptions) {
     sendContextId: number | null | undefined,
     model?: string,
     sendAttachments?: AttachmentPayload[],
+    executionMode?: string,
   ) {
     isStreaming.value = true;
     streamingText.value = '';
@@ -142,6 +144,7 @@ export function useChat(options: UseChatOptions) {
         model: model || undefined,
         attachments: sendAttachments?.length ? sendAttachments : undefined,
         siteHandle: options.siteHandle || undefined,
+        executionMode: executionMode || undefined,
       },
       {
         onEvent(event) {
@@ -189,7 +192,7 @@ export function useChat(options: UseChatOptions) {
           streamingText.value = '';
           streamingThinking.value = '';
           liveToolCalls.value = [];
-          sendLegacy(message, sendContextId, model, sendAttachments);
+          sendLegacy(message, sendContextId, model, sendAttachments, executionMode);
           console.warn('SSE failed, falling back to legacy:', error.message);
         },
         onComplete() {
@@ -246,6 +249,7 @@ export function useChat(options: UseChatOptions) {
     sendContextId: number | null | undefined,
     model?: string,
     sendAttachments?: AttachmentPayload[],
+    executionMode?: string,
   ) {
     try {
       const data = await apiPost<SendResponse>('co-pilot/chat/send', {
@@ -256,6 +260,7 @@ export function useChat(options: UseChatOptions) {
         model: model || undefined,
         attachments: sendAttachments?.length ? sendAttachments : undefined,
         siteHandle: options.siteHandle || undefined,
+        executionMode: executionMode || undefined,
       });
 
       messages.value.push({

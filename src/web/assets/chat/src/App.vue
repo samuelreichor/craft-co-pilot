@@ -10,6 +10,7 @@ import ChatPanel from './components/ChatPanel.vue';
 const init = window.__COPILOT_INIT__ || {};
 
 const { models, currentModel } = useModels();
+const executionMode = ref('supervised');
 const {
   conversations,
   activeConversationId,
@@ -79,11 +80,8 @@ onMounted(() => {
 <template>
   <Teleport to="#co-pilot-action-btns">
     <HeaderActions
-      :models="models"
-      :current-model="currentModel"
       :conversation-id="activeConversationId"
       :is-exporting="isExporting"
-      @update:current-model="currentModel = $event"
       @new-chat="newChat"
       @export-debug="handleExportDebug"
     />
@@ -101,7 +99,11 @@ onMounted(() => {
     context-type="global"
     :context-id="init.contextId"
     :model="currentModel"
+    :models="models"
+    :execution-mode="executionMode"
     :site-handle="init.siteHandle"
     @conversation-created="onConversationCreated"
+    @update:model="currentModel = $event"
+    @update:execution-mode="executionMode = $event"
   />
 </template>

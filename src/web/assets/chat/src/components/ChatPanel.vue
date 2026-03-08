@@ -5,16 +5,25 @@ import { useChat } from '../composables/useChat';
 import MessageList from './MessageList.vue';
 import ChatInput from './ChatInput.vue';
 
-const props = withDefaults(defineProps<ChatPanelProps & { model?: string; siteHandle?: string | null }>(), {
+const props = withDefaults(defineProps<ChatPanelProps & {
+  model?: string;
+  siteHandle?: string | null;
+  models?: string[];
+  executionMode?: string;
+}>(), {
   contextId: null,
   initialConversationId: null,
   compact: false,
   model: '',
   siteHandle: null,
+  models: () => [],
+  executionMode: 'supervised',
 });
 
 const emit = defineEmits<{
   'conversation-created': [id: number];
+  'update:model': [value: string];
+  'update:executionMode': [value: string];
 }>();
 
 const chatInput = ref<InstanceType<typeof ChatInput> | null>(null);
@@ -29,7 +38,7 @@ const chat = useChat({
 });
 
 function handleSend(text: string) {
-  chat.sendMessage(text, props.model || undefined);
+  chat.sendMessage(text, props.model || undefined, props.executionMode || undefined);
 }
 
 function setMessages(msgs: UIMessage[]) {
@@ -77,10 +86,15 @@ defineExpose({
       :is-streaming="chat.isStreaming.value"
       :attachments="chat.attachments.value"
       :compact="compact"
+      :models="models"
+      :current-model="model"
+      :execution-mode="executionMode"
       @send="handleSend"
       @cancel="chat.cancel()"
       @add-attachment="chat.addAttachment($event)"
       @remove-attachment="chat.removeAttachment($event)"
+      @update:current-model="$emit('update:model', $event)"
+      @update:execution-mode="$emit('update:executionMode', $event)"
     />
   </div>
 </template>
