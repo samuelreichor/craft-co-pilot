@@ -4,7 +4,6 @@ namespace samuelreichor\coPilot\transformers\fields;
 
 use craft\base\FieldInterface;
 use craft\elements\Entry;
-use craft\fields\BaseOptionsField;
 use craft\fields\Color as ColorField;
 use craft\fields\Country as CountryField;
 use craft\fields\data\ColorData;
@@ -20,8 +19,7 @@ use craft\fields\Time as TimeField;
 use craft\fields\Url as UrlField;
 
 /**
- * Handles scalar field types: PlainText, Number, Range, Lightswitch, Date, Time, Color, Email, Url, Icon, Country,
- * and option fields: Dropdown, RadioButtons, ButtonGroup, Checkboxes, MultiSelect.
+ * Handles scalar field types: PlainText, Number, Range, Lightswitch, Date, Time, Color, Email, Url, Icon, Country.
  */
 class ScalarFieldTransformer implements FieldTransformerInterface
 {
@@ -39,7 +37,6 @@ class ScalarFieldTransformer implements FieldTransformerInterface
             UrlField::class,
             IconField::class,
             CountryField::class,
-            BaseOptionsField::class,
         ];
     }
 
@@ -62,7 +59,6 @@ class ScalarFieldTransformer implements FieldTransformerInterface
             $field instanceof UrlField => $this->describeScalar($fieldInfo, 'string', 'Full URL including protocol.'),
             $field instanceof IconField => $this->describeScalar($fieldInfo, 'string', 'Font Awesome name, e.g. "house", "user".'),
             $field instanceof CountryField => $this->describeScalar($fieldInfo, 'string', 'Two-letter country code, e.g. "US", "DE".'),
-            $field instanceof BaseOptionsField => $this->describeOptions($field, $fieldInfo),
             default => $fieldInfo,
         };
     }
@@ -82,7 +78,6 @@ class ScalarFieldTransformer implements FieldTransformerInterface
         return match (true) {
             $field instanceof CountryField && is_array($value) => $this->normalizeCountryValue($value),
             $field instanceof TimeField && is_string($value) && str_contains($value, 'T') => $this->normalizeTimeValue($value),
-            $field instanceof BaseOptionsField && is_array($value) => $this->normalizeOptionsValue($value),
             default => null,
         };
     }
@@ -183,31 +178,6 @@ class ScalarFieldTransformer implements FieldTransformerInterface
     }
 
     /**
-     * @param array<string, mixed> $fieldInfo
-     * @return array<string, mixed>
-     */
-    private function describeOptions(BaseOptionsField $field, array $fieldInfo): array
-    {
-        $options = [];
-        foreach ($field->options as $opt) {
-            if (isset($opt['value']) && $opt['value'] !== '') {
-                $options[] = $opt['value'];
-            }
-        }
-        $fieldInfo['options'] = $options;
-        $isMulti = $field instanceof \craft\fields\Checkboxes || $field instanceof \craft\fields\MultiSelect;
-        if ($isMulti) {
-            $fieldInfo['valueFormat'] = 'array of option values';
-            $fieldInfo['hint'] = 'Send an array of values, e.g. ["' . implode('", "', array_slice($options, 0, 2)) . '"].';
-        } else {
-            $fieldInfo['valueFormat'] = 'string';
-            $fieldInfo['hint'] = 'Send one of the option values as a plain string.';
-        }
-
-        return $fieldInfo;
-    }
-
-    /**
      * @param array<string, mixed> $value
      */
     private function normalizeCountryValue(array $value): mixed
@@ -231,47 +201,5 @@ class ScalarFieldTransformer implements FieldTransformerInterface
         }
 
         return null;
-    }
-
-    /**
-     * @param array<int|string, mixed> $value
-     */
-    private function normalizeOptionsValue(array $value): mixed
-    {
-        // Single object: {"value": "optionA", "label": "Option A"} → "optionA"
-        if (isset($value['value'])) {
-            return $value['value'];
-        }
-
-        // Array of objects: [{"value": "optionA"}, ...] → ["optionA", ...]
-        if (array_is_list($value)) {
-            return array_map(
-                fn($item) => is_array($item) && isset($item['value']) ? $item['value'] : $item,
-                $value,
-            );
-        }
-
-        // Boolean map: {"optionA": true, "optionB": false} → ["optionA"]
-        if ($this->isBooleanMap($value)) {
-            return array_keys(array_filter($value));
-        }
-
-        return null;
-    }
-
-    /**
-     * Checks if an array is a boolean map (all values are booleans).
-     *
-     * @param array<string, mixed> $value
-     */
-    private function isBooleanMap(array $value): bool
-    {
-        foreach ($value as $v) {
-            if (!is_bool($v)) {
-                return false;
-            }
-        }
-
-        return true;
     }
 }

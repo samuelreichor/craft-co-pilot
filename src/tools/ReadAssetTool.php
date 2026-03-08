@@ -37,7 +37,6 @@ class ReadAssetTool implements ToolInterface
 
         $plugin = CoPilot::getInstance();
 
-        // Permission check
         $guard = $plugin->permissionGuard->canReadAsset($assetId);
         if (!$guard['allowed']) {
             return ['error' => $guard['reason']];

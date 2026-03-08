@@ -49,7 +49,6 @@ class SearchAssetsTool implements ToolInterface
     {
         $settings = CoPilot::getInstance()->getSettings();
 
-        // Check if Asset element type is blocked
         if ($settings->isElementTypeBlocked(Asset::class)) {
             return ['total' => 0, 'results' => []];
         }
@@ -74,14 +73,12 @@ class SearchAssetsTool implements ToolInterface
             $query->kind($kind);
         }
 
-        // Filter to allowed volumes only
         $allowedVolumeIds = $this->getAllowedVolumeIds();
         if (empty($allowedVolumeIds)) {
             return ['total' => 0, 'results' => []];
         }
         $query->volumeId($allowedVolumeIds);
 
-        // Order by score when searching, otherwise by dateCreated
         if ($searchQuery) {
             $query->orderBy('score');
         } else {

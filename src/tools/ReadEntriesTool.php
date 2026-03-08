@@ -70,7 +70,6 @@ class ReadEntriesTool implements ToolInterface
         foreach ($entryIds as $entryId) {
             $entryId = (int) $entryId;
 
-            // Permission check
             $guard = $plugin->permissionGuard->canReadEntry($entryId);
             if (!$guard['allowed']) {
                 $results[] = ['error' => "Entry #{$entryId}: " . $guard['reason']];

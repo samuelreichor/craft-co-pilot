@@ -92,8 +92,7 @@ class SearchEntriesTool implements ToolInterface
             $query->search($searchQuery);
         }
 
-        // Apply status filter
-        // In Craft 5, drafts are a separate dimension — Entry::find() defaults to drafts(false).
+        // Craft 5 drafts are a separate dimension from status
         if ($status === 'any') {
             $query->status(null)->drafts(null);
         } elseif ($status === 'draft') {
@@ -102,15 +101,12 @@ class SearchEntriesTool implements ToolInterface
             $query->status($status);
         }
 
-        // Apply section filter
         if ($sectionHandle) {
             $query->section($sectionHandle);
         }
 
-        // Apply ordering
         $query->orderBy($this->resolveOrderBy($orderBy));
 
-        // Filter to allowed sections only (skip if a specific section was already validated)
         if (!$sectionHandle) {
             $allowedSectionIds = $this->getAllowedSectionIds();
             if (empty($allowedSectionIds)) {
@@ -139,7 +135,6 @@ class SearchEntriesTool implements ToolInterface
         ], $entries);
 
         if ($total === 0) {
-            // When a search query was used, check if entries exist without the query
             if ($searchQuery) {
                 $browseQuery = Entry::find()
                     ->status($status === 'any' ? null : $status);
@@ -172,7 +167,6 @@ class SearchEntriesTool implements ToolInterface
                 }
             }
 
-            // Check if entries exist with any status (including drafts)
             if ($status !== 'any') {
                 $anyStatusQuery = Entry::find()
                     ->status(null)
@@ -208,9 +202,7 @@ class SearchEntriesTool implements ToolInterface
     }
 
     /**
-     * Validates that the requested section exists and is accessible.
-     *
-     * @return array<string, mixed>|null Error response or null if valid
+     * @return array<string, mixed>|null
      */
     private function validateSection(string $sectionHandle): ?array
     {

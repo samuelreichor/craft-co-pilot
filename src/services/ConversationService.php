@@ -17,9 +17,6 @@ use samuelreichor\coPilot\models\Message;
  */
 class ConversationService extends Component
 {
-    /**
-     * Saves a conversation to the database.
-     */
     public function save(Conversation $conversation): bool
     {
         $tableSchema = Craft::$app->getDb()->getSchema()->getTableSchema(Constants::TABLE_CONVERSATIONS);
@@ -65,9 +62,6 @@ class ConversationService extends Component
         return true;
     }
 
-    /**
-     * Loads a conversation by ID.
-     */
     public function getById(int $id): ?Conversation
     {
         $row = (new Query())
@@ -83,8 +77,6 @@ class ConversationService extends Component
     }
 
     /**
-     * Returns all conversations regardless of user.
-     *
      * @return Conversation[]
      */
     public function getAll(int $limit = 20, ?string $contextType = null): array
@@ -104,8 +96,6 @@ class ConversationService extends Component
     }
 
     /**
-     * Returns conversations for the current user.
-     *
      * @return Conversation[]
      */
     public function getForCurrentUser(int $limit = 20, ?string $contextType = null): array
@@ -130,9 +120,6 @@ class ConversationService extends Component
         return array_map(fn(array $row) => $this->hydrateConversation($row), $rows);
     }
 
-    /**
-     * Finds the most recent conversation for a user with a specific context.
-     */
     public function getByContext(int $userId, string $contextType, int $contextId): ?Conversation
     {
         $row = (new Query())
@@ -154,8 +141,6 @@ class ConversationService extends Component
     }
 
     /**
-     * Returns all conversations for a user with a specific context.
-     *
      * @return Conversation[]
      */
     public function getAllForContext(int $userId, string $contextType, int $contextId, int $limit = 20): array
@@ -174,9 +159,6 @@ class ConversationService extends Component
         return array_map(fn(array $row) => $this->hydrateConversation($row), $rows);
     }
 
-    /**
-     * Deletes a conversation by ID.
-     */
     public function deleteById(int $id): bool
     {
         $affected = Craft::$app->getDb()->createCommand()->delete(

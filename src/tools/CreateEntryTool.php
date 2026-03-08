@@ -73,7 +73,6 @@ class CreateEntryTool implements ToolInterface
             $fields = $arguments['fields'];
         }
 
-        // Find section
         $section = Craft::$app->getEntries()->getSectionByHandle($sectionHandle);
         if (!$section) {
             return [
@@ -82,7 +81,6 @@ class CreateEntryTool implements ToolInterface
             ];
         }
 
-        // Find entry type within this section
         $entryType = $this->findEntryType($section->id, $entryTypeHandle);
         if (!$entryType) {
             return [
@@ -91,7 +89,6 @@ class CreateEntryTool implements ToolInterface
             ];
         }
 
-        // Permission checks
         $permissionCheck = $this->checkPermissions($section);
         if ($permissionCheck !== null) {
             return [
@@ -100,7 +97,6 @@ class CreateEntryTool implements ToolInterface
             ];
         }
 
-        // Get current user
         $user = Craft::$app->getUser()->getIdentity();
         if (!$user) {
             return [
@@ -109,7 +105,6 @@ class CreateEntryTool implements ToolInterface
             ];
         }
 
-        // Resolve target site
         if ($siteHandle) {
             $site = Craft::$app->getSites()->getSiteByHandle($siteHandle);
             if (!$site) {
@@ -120,7 +115,6 @@ class CreateEntryTool implements ToolInterface
             }
         }
 
-        // Create entry as draft
         $entry = new Entry();
         $entry->sectionId = $section->id;
         $entry->typeId = $entryType->id;
@@ -135,10 +129,8 @@ class CreateEntryTool implements ToolInterface
             $entry->slug = $slug;
         }
 
-        // Strip serialization markers that AI models may echo back
         unset($fields['_type']);
 
-        // Set custom fields
         foreach ($fields as $fieldHandle => $value) {
             try {
                 $value = CoPilot::getInstance()->fieldNormalizer->normalize($fieldHandle, $value, $entry);
@@ -151,7 +143,6 @@ class CreateEntryTool implements ToolInterface
             }
         }
 
-        // Determine creation behavior from settings
         $settings = CoPilot::getInstance()->getSettings();
         $creationBehavior = ElementCreationBehavior::tryFrom($settings->elementCreationBehavior)
             ?? ElementCreationBehavior::Draft;
@@ -194,7 +185,6 @@ class CreateEntryTool implements ToolInterface
             ];
         }
 
-        // Build diff for audit: everything is new
         $createDiff = ['title' => ['old' => null, 'new' => $title]];
 
         if ($slug !== null) {
@@ -242,12 +232,10 @@ class CreateEntryTool implements ToolInterface
     {
         $settings = CoPilot::getInstance()->getSettings();
 
-        // Check element type blocklist
         if ($settings->isElementTypeBlocked(Entry::class)) {
             return 'Access denied – entry access is blocked by the data protection settings.';
         }
 
-        // Check section blocklist
         $access = $settings->getSectionAccessLevel($section->uid);
 
         if ($access === SectionAccess::Blocked) {
@@ -259,7 +247,6 @@ class CreateEntryTool implements ToolInterface
                 . 'You can read entries in this section but not create new ones.';
         }
 
-        // Check Craft write permission
         $user = Craft::$app->getUser()->getIdentity();
         if (!$user) {
             return 'Access denied – no authenticated user.';

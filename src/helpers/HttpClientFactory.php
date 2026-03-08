@@ -45,7 +45,6 @@ final class HttpClientFactory
                 return false;
             }
 
-            // Retry on connection failures (timeouts, DNS, etc.)
             if ($exception instanceof ConnectException) {
                 Logger::warning("Connection error, retry {$retries}/{" . self::MAX_RETRIES . '}: ' . $exception->getMessage());
 
@@ -58,7 +57,7 @@ final class HttpClientFactory
 
             $status = $response->getStatusCode();
 
-            // 429 Too Many Requests — only retry if Retry-After is reasonable
+            // Only retry 429 if Retry-After is reasonable
             if ($status === 429) {
                 $retryAfter = self::parseRetryAfterSeconds($response);
 
@@ -73,7 +72,6 @@ final class HttpClientFactory
                 return true;
             }
 
-            // 5xx Server errors
             if ($status >= 500) {
                 Logger::warning("Server error ({$status}), retry {$retries}/{" . self::MAX_RETRIES . '}');
 
@@ -90,7 +88,6 @@ final class HttpClientFactory
     private static function delay(): callable
     {
         return function(int $retries, ?Response $response): int {
-            // Respect Retry-After header if present and reasonable
             if ($response) {
                 $retryAfter = self::parseRetryAfterSeconds($response);
 
@@ -114,12 +111,10 @@ final class HttpClientFactory
             return null;
         }
 
-        // Numeric value = seconds
         if (is_numeric($header)) {
             return (float) $header;
         }
 
-        // HTTP-date value
         $timestamp = strtotime($header);
 
         if ($timestamp === false) {

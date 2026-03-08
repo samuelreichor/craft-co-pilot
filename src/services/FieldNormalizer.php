@@ -15,19 +15,12 @@ use samuelreichor\coPilot\CoPilot;
 class FieldNormalizer extends Component
 {
     /**
-     * The raw field handle as provided by the AI. Available during normalizeValue()
-     * so transformers can use the layout handle (which may differ from the field's original handle)
-     * for operations like Matrix block merging.
+     * Available during normalizeValue() so transformers can use the layout handle
+     * (which may differ from the field's original handle) for Matrix block merging.
      */
     private ?string $currentFieldHandle = null;
-
-    /**
-     * Normalizes a field value based on the field type.
-     * For new entries (no existing entry), pass null as $entry.
-     */
     public function normalize(string $fieldHandle, mixed $value, ?Entry $entry = null): mixed
     {
-        // Strip _type serialization markers that AI models may echo back
         $value = $this->stripSerializationMarkers($value);
 
         $field = $this->resolveField($fieldHandle, $entry);
@@ -46,23 +39,16 @@ class FieldNormalizer extends Component
         $normalized = $transformer->normalizeValue($field, $value, $entry);
         $this->currentFieldHandle = null;
 
-        // null means no normalization needed — return the original value
         return $normalized ?? $value;
     }
 
-    /**
-     * Returns the raw AI-provided field handle during normalization.
-     * Useful for transformers that need the layout handle (e.g. Matrix block merging).
-     */
     public function getCurrentFieldHandle(): ?string
     {
         return $this->currentFieldHandle;
     }
 
     /**
-     * Recursively strips serialization markers (e.g. "_type") from field values.
-     * These markers are added during serializeValue() for AI context but must never
-     * be written back to Craft. Weak models sometimes echo them back verbatim.
+     * Strips _type markers added during serialization. Weak models echo them back verbatim.
      */
     private function stripSerializationMarkers(mixed $value): mixed
     {
@@ -80,8 +66,8 @@ class FieldNormalizer extends Component
     }
 
     /**
-     * Resolves a field by handle, checking the entry's field layout first (supports custom layout handles),
-     * then falling back to the global fields service.
+     * Checks the entry's field layout first (supports custom layout handles),
+     * then falls back to the global fields service.
      */
     public function resolveField(string $fieldHandle, ?Entry $entry): ?FieldInterface
     {

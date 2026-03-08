@@ -157,7 +157,6 @@ class CoPilot extends Plugin
     {
         parent::afterSaveSettings();
 
-        // Invalidate schema cache when settings change via plugin settings page
         $this->schemaService->invalidateCache();
     }
 
@@ -247,9 +246,6 @@ class CoPilot extends Plugin
         );
     }
 
-    /**
-     * Injects the chat trigger button into the entry toolbar.
-     */
     private function registerEntryContextInjection(): void
     {
         Event::on(
@@ -266,7 +262,6 @@ class CoPilot extends Plugin
                     return;
                 }
 
-                // Register SlideoutAsset for the slideout JS + shared CSS
                 Craft::$app->getView()->registerAssetBundle(SlideoutAsset::class);
 
                 $icon = $this->providerService->getActiveProvider()->getIcon();
@@ -279,9 +274,6 @@ class CoPilot extends Plugin
         );
     }
 
-    /**
-     * Registers global JS context and asset bundles on CP pages.
-     */
     private function registerCpResources(): void
     {
         if (!Craft::$app->getRequest()->getIsCpRequest()) {

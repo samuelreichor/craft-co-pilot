@@ -122,8 +122,6 @@ class OpenAIProvider implements ProviderInterface
     }
 
     /**
-     * Formats the messages array including the system prompt.
-     *
      * @param array<int, array<string, mixed>> $messages
      * @return array<int, array<string, mixed>>
      */
@@ -221,7 +219,6 @@ class OpenAIProvider implements ProviderInterface
             Logger::warning('OpenAI API returned empty response: finish_reason=' . $finishReason);
         }
 
-        // Tool calls
         if (!empty($message['tool_calls'])) {
             $toolCalls = array_map(fn(array $tc) => [
                 'id' => $tc['id'],
@@ -232,7 +229,6 @@ class OpenAIProvider implements ProviderInterface
             return AIResponse::toolCall($toolCalls, $message['content'] ?? null, $inputTokens, $outputTokens);
         }
 
-        // Text response
         return AIResponse::text($message['content'] ?? '', $inputTokens, $outputTokens);
     }
 
@@ -340,7 +336,6 @@ class OpenAIProvider implements ProviderInterface
      */
     private function processStreamChunk(array $json, array &$toolCalls, callable $onChunk): void
     {
-        // Usage info in the final chunk
         if (isset($json['usage'])) {
             $onChunk(new StreamChunk(
                 'usage',
@@ -354,12 +349,10 @@ class OpenAIProvider implements ProviderInterface
             return;
         }
 
-        // Text content
         if (isset($delta['content']) && $delta['content'] !== '') {
             $onChunk(new StreamChunk('text_delta', delta: $delta['content']));
         }
 
-        // Tool call deltas — accumulate until complete
         if (isset($delta['tool_calls'])) {
             foreach ($delta['tool_calls'] as $tcDelta) {
                 $index = $tcDelta['index'] ?? 0;

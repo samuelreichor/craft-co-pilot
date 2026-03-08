@@ -7,12 +7,14 @@ use craft\elements\Entry;
 use samuelreichor\coPilot\CoPilot;
 use samuelreichor\coPilot\events\SerializeEntryEvent;
 use samuelreichor\coPilot\services\ContextService;
+use samuelreichor\coPilot\transformers\SerializeFallbackTrait;
 
 /**
  * Handles serialization of Entry elements for AI context.
  */
 class EntryTransformer implements ElementTransformerInterface
 {
+    use SerializeFallbackTrait;
     public function getSupportedElementClasses(): array
     {
         return [
@@ -28,7 +30,6 @@ class EntryTransformer implements ElementTransformerInterface
 
         $contextService = CoPilot::getInstance()->contextService;
 
-        // Fire backward-compat event
         $event = new SerializeEntryEvent();
         $event->entry = $element;
         $event->fields = $fieldHandles ?? $this->getFieldHandles($element);
@@ -105,32 +106,5 @@ class EntryTransformer implements ElementTransformerInterface
             fn($resolved) => $resolved['handle'],
             $registry->resolveFieldLayoutFields($fieldLayout),
         );
-    }
-
-    private function serializeFallback(mixed $value): mixed
-    {
-        if (is_object($value)) {
-            if ($value instanceof \DateTimeInterface) {
-                return $value->format('c');
-            }
-
-            if (method_exists($value, '__toString')) {
-                return (string) $value;
-            }
-
-            return null;
-        }
-
-        if (is_array($value)) {
-            return array_map(static function($item) {
-                if (is_object($item)) {
-                    return method_exists($item, '__toString') ? (string) $item : null;
-                }
-
-                return $item;
-            }, $value);
-        }
-
-        return $value;
     }
 }

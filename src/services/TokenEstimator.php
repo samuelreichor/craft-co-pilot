@@ -8,7 +8,6 @@ namespace samuelreichor\coPilot\services;
 class TokenEstimator
 {
     /**
-     * Estimates the token count of a serialized data structure.
      * Rough rule: 1 token ~ 4 characters.
      *
      * @param array<string, mixed> $data
@@ -21,8 +20,7 @@ class TokenEstimator
     }
 
     /**
-     * Reduces context when it exceeds the token budget.
-     * Strategy: Trim Matrix block arrays to the first 5 blocks.
+     * Trims Matrix block arrays to 5 blocks when over budget.
      *
      * @param array<string, mixed> $data
      * @return array<string, mixed>

@@ -15,12 +15,14 @@ use craft\fields\Matrix as MatrixField;
 use craft\fields\Money as MoneyField;
 use craft\fields\Table as TableField;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\transformers\SerializeFallbackTrait;
 
 /**
  * Handles complex field types: Matrix, ContentBlock, Link, Money, JSON, Table.
  */
 class ComplexFieldTransformer implements FieldTransformerInterface
 {
+    use SerializeFallbackTrait;
     public function getSupportedFieldClasses(): array
     {
         return [
@@ -244,33 +246,6 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         return $blocks;
     }
 
-    private function serializeFallback(mixed $value): mixed
-    {
-        if (is_object($value)) {
-            if ($value instanceof \DateTimeInterface) {
-                return $value->format('c');
-            }
-
-            if (method_exists($value, '__toString')) {
-                return (string) $value;
-            }
-
-            return null;
-        }
-
-        if (is_array($value)) {
-            return array_map(static function($item) {
-                if (is_object($item)) {
-                    return method_exists($item, '__toString') ? (string) $item : null;
-                }
-
-                return $item;
-            }, $value);
-        }
-
-        return $value;
-    }
-
     /**
      * @return array<string, mixed>
      */
@@ -484,7 +459,6 @@ class ComplexFieldTransformer implements FieldTransformerInterface
             $replaceMode = true;
         }
 
-        // Extract blocks array regardless of replace mode
         if (isset($value['blocks']) && is_array($value['blocks'])) {
             $value = $value['blocks'];
         }
@@ -530,19 +504,16 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      */
     private function normalizeMatrixBlock(array $block, ?MatrixField $matrixField = null): array
     {
-        // Use _blockType as type fallback
         if (!isset($block['type']) && isset($block['_blockType'])) {
             $block['type'] = $block['_blockType'];
         }
 
-        // Strip all serialization markers (keys starting with _)
         foreach (array_keys($block) as $key) {
             if (str_starts_with((string) $key, '_')) {
                 unset($block[$key]);
             }
         }
 
-        // If fields are at top level (no 'fields' sub-key), restructure
         if (!isset($block['fields'])) {
             $reserved = ['type', 'title', 'slug'];
             $fields = array_diff_key($block, array_flip($reserved));
@@ -552,7 +523,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
             }
         }
 
-        // Strip native attributes from fields sub-key (AI sometimes puts title/slug inside fields)
+        // AI sometimes puts title/slug inside fields, move them up
         if (isset($block['fields']) && is_array($block['fields'])) {
             foreach (['title', 'slug'] as $native) {
                 if (isset($block['fields'][$native]) && !isset($block[$native])) {
@@ -561,7 +532,6 @@ class ComplexFieldTransformer implements FieldTransformerInterface
                 unset($block['fields'][$native]);
             }
 
-            // Normalize sub-fields via their transformers (handles ContentBlock, nested Matrix, etc.)
             if ($matrixField !== null && isset($block['type'])) {
                 $block['fields'] = $this->normalizeBlockSubFields($block['fields'], $matrixField, $block['type']);
             } else {
@@ -573,10 +543,6 @@ class ComplexFieldTransformer implements FieldTransformerInterface
     }
 
     /**
-     * Normalizes sub-fields of a Matrix block using field type resolution.
-     * Resolves the entry type from the Matrix field, then runs each sub-field
-     * through its transformer's normalizeValue().
-     *
      * @param array<string, mixed> $fields
      * @return array<string, mixed>
      */
@@ -617,9 +583,6 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         return $fields;
     }
 
-    /**
-     * Resolves the field layout for a given block type handle within a Matrix field.
-     */
     private function resolveBlockFieldLayout(MatrixField $matrixField, string $blockTypeHandle): ?\craft\models\FieldLayout
     {
         foreach ($matrixField->getEntryTypes() as $entryType) {
@@ -632,8 +595,6 @@ class ComplexFieldTransformer implements FieldTransformerInterface
     }
 
     /**
-     * Fallback: pattern-based normalization for nested fields when no field context is available.
-     *
      * @param array<string, mixed> $fields
      * @return array<string, mixed>
      */
@@ -644,14 +605,12 @@ class ComplexFieldTransformer implements FieldTransformerInterface
                 continue;
             }
 
-            // Nested Matrix in {"blocks": [...]} or {"_replace": true, "blocks": [...]} format
             if (isset($value['blocks']) && is_array($value['blocks'])) {
                 $fields[$key] = $this->normalizeMatrixValue($value, null, $key);
 
                 continue;
             }
 
-            // Flat list of block objects
             if (array_is_list($value)) {
                 $fields[$key] = array_map(function($item) {
                     if (is_array($item) && (isset($item['type']) || isset($item['_blockType']))) {

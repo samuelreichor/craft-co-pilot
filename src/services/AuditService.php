@@ -20,8 +20,6 @@ class AuditService extends Component
     private array $pendingIds = [];
 
     /**
-     * Logs a tool call to the audit table.
-     *
      * @param array<string, mixed> $params
      * @param array<string, mixed> $result
      */
@@ -55,9 +53,6 @@ class AuditService extends Component
         $this->pendingIds[] = (int) $db->getLastInsertID();
     }
 
-    /**
-     * Links all audit entries created during this request to a conversation.
-     */
     public function linkToConversation(int $conversationId): void
     {
         if ($this->pendingIds === []) {
@@ -73,9 +68,6 @@ class AuditService extends Component
         $this->pendingIds = [];
     }
 
-    /**
-     * Deletes audit log entries older than the configured retention period.
-     */
     public function purgeOldLogs(): void
     {
         $days = CoPilot::getInstance()->getSettings()->auditLogRetentionDays;
@@ -93,8 +85,6 @@ class AuditService extends Component
     }
 
     /**
-     * Returns recent audit log entries.
-     *
      * @return array<int, array<string, mixed>>
      */
     public function getRecentLogs(int $limit = 50): array
@@ -107,12 +97,8 @@ class AuditService extends Component
     }
 
     /**
-     * Returns paginated audit log entries for write actions, formatted for VueAdminTable.
-     *
-     * @return array{items: array<int, array<string, mixed>>, total: int}
-     */
-    /**
      * @param array<string, int> $orderBy
+     * @return array{items: array<int, array<string, mixed>>, total: int}
      */
     public function getWriteLogs(int $page = 1, int $perPage = 25, ?string $search = null, ?int $siteId = null, array $orderBy = [], ?string $action = null): array
     {
@@ -172,22 +158,11 @@ class AuditService extends Component
     }
 
     /**
-     * Decodes the JSON details column, handling legacy double-encoded values.
-     *
      * @return array<string, mixed>
      */
     private function decodeDetails(?string $raw): array
     {
-        $decoded = $raw ?? '{}';
-
-        if (is_string($decoded)) {
-            $decoded = json_decode($decoded, true);
-        }
-
-        // Handle legacy double-encoded entries
-        if (is_string($decoded)) {
-            $decoded = json_decode($decoded, true);
-        }
+        $decoded = json_decode($raw ?? '{}', true);
 
         return is_array($decoded) ? $decoded : [];
     }
@@ -247,8 +222,6 @@ class AuditService extends Component
     }
 
     /**
-     * Converts diff values to strings safe for JSON storage and display.
-     *
      * @param mixed $diff
      * @return array<string, array{old: string|null, new: string|null}>
      */

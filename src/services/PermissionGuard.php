@@ -16,8 +16,6 @@ use yii\base\InvalidConfigException;
 class PermissionGuard extends Component
 {
     /**
-     * Checks if the current user can read the given entry.
-     *
      * @return array{allowed: bool, reason: string|null}
      */
     public function canReadEntry(int $entryId): array
@@ -27,15 +25,12 @@ class PermissionGuard extends Component
             return $this->denied("Entry #{$entryId} not found.");
         }
 
-        // For nested entries (Matrix blocks), check the root owner's permissions
         $rootEntry = $this->resolveRootEntry($entry);
 
         return $this->checkReadAccess($rootEntry);
     }
 
     /**
-     * Checks if the current user can write to the given entry.
-     *
      * @return array{allowed: bool, reason: string|null}
      */
     public function canWriteEntry(int $entryId): array
@@ -45,7 +40,6 @@ class PermissionGuard extends Component
             return $this->denied("Entry #{$entryId} not found.");
         }
 
-        // For nested entries (Matrix blocks), resolve the root owner entry
         $rootEntry = $this->resolveRootEntry($entry);
 
         $readCheck = $this->checkReadAccess($rootEntry);
@@ -53,7 +47,6 @@ class PermissionGuard extends Component
             return $readCheck;
         }
 
-        // Check read-only restriction from blocklist
         $section = $rootEntry->getSection();
         $settings = CoPilot::getInstance()->getSettings();
         $access = $settings->getSectionAccessLevel($section->uid);
@@ -65,7 +58,6 @@ class PermissionGuard extends Component
             );
         }
 
-        // Check Craft write permission
         $user = Craft::$app->getUser()->getIdentity();
         if (!$user) {
             return $this->denied('Access denied – no authenticated user.');
@@ -82,8 +74,6 @@ class PermissionGuard extends Component
     }
 
     /**
-     * Checks if the current user can read the given asset.
-     *
      * @return array{allowed: bool, reason: string|null}
      */
     public function canReadAsset(int $assetId): array
@@ -115,8 +105,6 @@ class PermissionGuard extends Component
     }
 
     /**
-     * Checks if a section is accessible for reading.
-     *
      * @return array{allowed: bool, reason: string|null}
      */
     public function canReadSection(string $sectionUid): array
@@ -144,7 +132,7 @@ class PermissionGuard extends Component
     }
 
     /**
-     * For nested entries (Matrix blocks), walks up the owner chain to the root section entry.
+     * Walks up the owner chain to the root section entry (Matrix blocks are nested).
      */
     private function resolveRootEntry(Entry $entry): Entry
     {
@@ -185,12 +173,10 @@ class PermissionGuard extends Component
     {
         $settings = CoPilot::getInstance()->getSettings();
 
-        // Check element type blocklist
         if ($settings->isElementTypeBlocked(get_class($entry))) {
             return $this->denied('Access denied – this element type is blocked by the data protection settings.');
         }
 
-        // Check section blocklist
         $section = $entry->getSection();
         $access = $settings->getSectionAccessLevel($section->uid);
 
@@ -200,7 +186,6 @@ class PermissionGuard extends Component
             );
         }
 
-        // Check Craft user permission
         $user = Craft::$app->getUser()->getIdentity();
         if (!$user) {
             return $this->denied('Access denied – no authenticated user.');

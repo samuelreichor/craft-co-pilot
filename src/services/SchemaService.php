@@ -21,8 +21,6 @@ use samuelreichor\coPilot\helpers\Logger;
 class SchemaService extends Component
 {
     /**
-     * Returns a lightweight overview of all accessible sections (no field definitions).
-     *
      * @return array<string, mixed>
      */
     public function getAccessibleSchema(): array
@@ -92,20 +90,15 @@ class SchemaService extends Component
         return $schema;
     }
 
-    /**
-     * Invalidates the schema cache.
-     */
     public function invalidateCache(): void
     {
         Craft::$app->getCache()->delete(Constants::CACHE_SCHEMA_PREFIX . 'overview');
 
-        // Invalidate all section-specific caches
         $sections = Craft::$app->getEntries()->getAllSections();
         foreach ($sections as $section) {
             Craft::$app->getCache()->delete(Constants::CACHE_SCHEMA_PREFIX . 'section.' . $section->handle);
         }
 
-        // Invalidate all entry type caches
         foreach (Craft::$app->getEntries()->getAllEntryTypes() as $entryType) {
             Craft::$app->getCache()->delete(Constants::CACHE_SCHEMA_PREFIX . 'entryType.' . $entryType->handle);
         }
@@ -183,8 +176,6 @@ class SchemaService extends Component
     }
 
     /**
-     * Builds the detailed schema for a single section by handle.
-     *
      * @return array<string, mixed>
      */
     private function buildSectionSchema(string $handle, bool $slim = false): array
@@ -231,8 +222,6 @@ class SchemaService extends Component
     }
 
     /**
-     * Builds the detailed schema for a single entry type by handle.
-     *
      * @return array<string, mixed>
      */
     private function buildEntryTypeSchema(string $handle): array
@@ -253,7 +242,6 @@ class SchemaService extends Component
     {
         $fields = [];
 
-        // Native fields: title and slug
         if ($entryType->hasTitleField) {
             $fields[] = [
                 'handle' => 'title',
@@ -271,7 +259,6 @@ class SchemaService extends Component
             ];
         }
 
-        // Custom and generated fields
         $fieldLayout = $entryType->getFieldLayout();
         $fields = array_merge($fields, $this->describeFieldLayoutFields($fieldLayout));
 
@@ -360,7 +347,6 @@ class SchemaService extends Component
             }
         }
 
-        // Generated fields
         if (method_exists($fieldLayout, 'getGeneratedFields')) {
             foreach ($fieldLayout->getGeneratedFields() as $generated) {
                 if (!is_array($generated) || !isset($generated['handle'])) {
@@ -384,13 +370,10 @@ class SchemaService extends Component
     }
 
     /**
-     * Describes a single custom field from its layout element and field instance.
-     *
      * @return array<string, mixed>
      */
     private function describeCustomField(CustomField $layoutElement, FieldInterface $field): array
     {
-        // Use the layout handle (custom override) or fall back to the field's handle
         $handle = $layoutElement->attribute();
 
         $fieldInfo = [
@@ -409,12 +392,10 @@ class SchemaService extends Component
 
         $fieldInfo = $this->describeFieldMetadata($field, $fieldInfo);
 
-        // ContentBlock sub-field descriptions
         if ($field instanceof ContentBlockField) {
             $fieldInfo['fields'] = $this->describeContentBlockFields($field);
         }
 
-        // Matrix block type descriptions
         if ($field instanceof MatrixField) {
             $fieldInfo['blockTypes'] = $this->describeMatrixBlockTypes($field);
         }
@@ -440,7 +421,6 @@ class SchemaService extends Component
         foreach ($field->getEntryTypes() as $entryType) {
             $blockFields = [];
 
-            // Native fields for matrix block entry types
             if ($entryType->hasTitleField) {
                 $blockFields[] = [
                     'handle' => 'title',
@@ -464,8 +444,6 @@ class SchemaService extends Component
     }
 
     /**
-     * Describes all custom and generated fields in a field layout.
-     *
      * @return array<int, array<string, mixed>>
      */
     private function describeFieldLayoutFields(FieldLayout $fieldLayout): array
@@ -477,7 +455,6 @@ class SchemaService extends Component
             $fields[] = $this->describeCustomField($resolved['layoutElement'], $resolved['field']);
         }
 
-        // Generated fields (dynamic fields added by Craft or plugins)
         if (method_exists($fieldLayout, 'getGeneratedFields')) {
             foreach ($fieldLayout->getGeneratedFields() as $generated) {
                 if (!is_array($generated) || !isset($generated['handle'])) {
@@ -486,7 +463,6 @@ class SchemaService extends Component
 
                 $handle = $generated['handle'];
 
-                // Skip fields already described as native
                 if ($handle === 'title' || $handle === 'slug') {
                     continue;
                 }
@@ -503,9 +479,7 @@ class SchemaService extends Component
     }
 
     /**
-     * Returns a meaningful type name for a field.
-     *
-     * Falls back to displayName() when getShortName() is too generic (e.g. craft\ckeditor\Field → "Field").
+     * Falls back to displayName() when getShortName() is too generic (e.g. craft\ckeditor\Field).
      */
     private function getFieldTypeName(FieldInterface $field): string
     {
@@ -519,8 +493,6 @@ class SchemaService extends Component
     }
 
     /**
-     * Enriches a field info array with type-specific metadata via the transformer registry.
-     *
      * @param array<string, mixed> $fieldInfo
      * @return array<string, mixed>
      */

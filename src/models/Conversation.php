@@ -37,8 +37,6 @@ class Conversation
     }
 
     /**
-     * Appends a debug turn to the log.
-     *
      * @param array<string, mixed> $debugData
      */
     public function addDebugTurn(array $debugData, int $inputTokens, int $outputTokens): void
@@ -60,8 +58,6 @@ class Conversation
     }
 
     /**
-     * Returns messages as provider-compatible array.
-     *
      * @return array<int, array<string, mixed>>
      */
     public function getMessagesArray(): array

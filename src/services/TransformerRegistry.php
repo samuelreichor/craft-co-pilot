@@ -35,11 +35,6 @@ class TransformerRegistry extends Component
     /** @var ElementTransformerInterface[]|null */
     private ?array $elementTransformers = null;
 
-    // ---- Field transformer resolution ----
-
-    /**
-     * Returns the transformer for a given field, or null if none matches.
-     */
     public function getTransformerForField(FieldInterface $field): ?FieldTransformerInterface
     {
         foreach ($this->getFieldTransformers() as $transformer) {
@@ -64,8 +59,6 @@ class TransformerRegistry extends Component
     }
 
     /**
-     * Returns all registered field transformers (custom first, then built-in).
-     *
      * @return FieldTransformerInterface[]
      */
     public function getFieldTransformers(): array
@@ -82,11 +75,6 @@ class TransformerRegistry extends Component
         return $this->fieldTransformers;
     }
 
-    // ---- Element transformer resolution ----
-
-    /**
-     * Returns the transformer for a given element, or null if none matches.
-     */
     public function getTransformerForElement(ElementInterface $element): ?ElementTransformerInterface
     {
         foreach ($this->getElementTransformers() as $transformer) {
@@ -101,8 +89,6 @@ class TransformerRegistry extends Component
     }
 
     /**
-     * Returns all registered element transformers (custom first, then built-in).
-     *
      * @return ElementTransformerInterface[]
      */
     public function getElementTransformers(): array
@@ -119,13 +105,8 @@ class TransformerRegistry extends Component
         return $this->elementTransformers;
     }
 
-    // ---- Shared field layout iteration ----
-
     /**
-     * Resolves all non-excluded custom fields from a field layout,
-     * using layout handles (custom overrides) instead of raw field handles.
-     *
-     * Used by both SchemaService (for describing) and element transformers (for serializing).
+     * Resolves custom fields from a layout using layout handles (custom overrides).
      *
      * @return array<int, array{layoutElement: CustomField, field: FieldInterface, handle: string}>
      */
@@ -154,9 +135,6 @@ class TransformerRegistry extends Component
         return $resolved;
     }
 
-    /**
-     * Checks whether a field class is excluded from transformer output.
-     */
     private function isExcludedField(FieldInterface $field): bool
     {
         $fieldClass = get_class($field);

@@ -44,8 +44,6 @@ class AgentService extends Component
     private ?string $activeSiteHandle = null;
 
     /**
-     * Handles a user message and returns the AI response.
-     *
      * @param Message[] $conversationHistory
      * @param array<int, array<string, mixed>> $attachments
      * @return array{text: string|null, toolCalls: array<int, array<string, mixed>>|null, newMessages: array<int, array<string, mixed>>, inputTokens: int, outputTokens: int, debug: array<string, mixed>}
@@ -63,7 +61,6 @@ class AgentService extends Component
         Logger::info("handleMessage: userMessage length=" . strlen($userMessage)
             . ", contextEntryId={$contextEntryId}, attachments=" . count($attachments));
 
-        // Build context
         $contextEntry = null;
         if ($contextEntryId) {
             $contextEntry = Entry::find()->id($contextEntryId)->status(null)->drafts(null)->site('*')->one();
@@ -73,17 +70,12 @@ class AgentService extends Component
         $this->activeSiteHandle = $site?->handle;
         $systemPrompt = $plugin->systemPromptBuilder->build($contextEntry, $site);
 
-        // Enrich user message with resolved attachment context
         $userMessage = $this->enrichMessageWithAttachments($userMessage, $attachments);
 
-        // Build messages array — historyCount marks the boundary between old and new messages
+        // historyCount marks the boundary between old and new messages
         $historyCount = count($conversationHistory);
         $messages = $this->buildMessagesArray($conversationHistory, $userMessage);
-
-        // Get tool definitions
         $toolDefs = $this->getToolDefinitions();
-
-        // Get provider
         $settings = $plugin->getSettings();
         $provider = $plugin->providerService->getActiveProvider();
 
@@ -146,9 +138,7 @@ class AgentService extends Component
                 ];
             }
 
-            // Handle tool calls
             if ($response->type === 'tool_call' && $response->toolCalls) {
-                // Add an assistant message with tool calls
                 $messages[] = [
                     'role' => MessageRole::Assistant->value,
                     'content' => $response->text,
@@ -156,7 +146,6 @@ class AgentService extends Component
                     'rawModelParts' => $response->rawModelParts,
                 ];
 
-                // Execute each tool call
                 foreach ($response->toolCalls as $toolCall) {
                     $result = $this->executeTool($toolCall['name'], $toolCall['arguments']);
 
@@ -168,7 +157,6 @@ class AgentService extends Component
                         'cpEditUrl' => $result['cpEditUrl'] ?? null,
                     ];
 
-                    // Add a tool result message
                     $messages[] = [
                         'role' => MessageRole::Tool->value,
                         'content' => $this->truncateToolResult($result),
@@ -197,8 +185,6 @@ class AgentService extends Component
     }
 
     /**
-     * Handles a user message with streaming, emitting SSE events via callback.
-     *
      * @param Message[] $conversationHistory
      * @param callable(string, array<string, mixed>): void $emit Emits SSE events
      * @param array<int, array<string, mixed>> $attachments
@@ -227,9 +213,7 @@ class AgentService extends Component
         $this->activeSiteHandle = $site?->handle;
         $systemPrompt = $plugin->systemPromptBuilder->build($contextEntry, $site);
 
-        // Enrich user message with resolved attachment context
         $userMessage = $this->enrichMessageWithAttachments($userMessage, $attachments);
-
         $historyCount = count($conversationHistory);
         $messages = $this->buildMessagesArray($conversationHistory, $userMessage);
         $toolDefs = $this->getToolDefinitions();
@@ -249,7 +233,6 @@ class AgentService extends Component
 
             Logger::info("Agent stream loop iteration {$iteration}/{$maxIterations}, sending " . count($messages) . ' messages to provider');
 
-            // Accumulate text from this provider call
             $iterationText = '';
             $iterationToolCalls = [];
             $iterationHadError = false;
@@ -322,13 +305,12 @@ class AgentService extends Component
                 }
             }
 
-            // No tool calls — we're done
+            // No tool calls so we're done
             if (empty($iterationToolCalls)) {
                 $fullText .= $iterationText;
                 break;
             }
 
-            // Has tool calls — execute them and loop back
             $fullText .= $iterationText;
 
             $messages[] = [
@@ -368,8 +350,6 @@ class AgentService extends Component
                     'isError' => !$success,
                 ];
             }
-
-            // Next iteration will append new text
         }
 
         if ($fullText === '' && !$hadStreamError) {
@@ -383,7 +363,6 @@ class AgentService extends Component
             Logger::info("handleMessageStream complete: {$iteration} iterations, {$totalInputTokens} input / {$totalOutputTokens} output tokens");
         }
 
-        // Append final assistant message for persistence
         $finalText = $fullText ?: null;
         if ($finalText !== null) {
             $messages[] = [
@@ -402,8 +381,6 @@ class AgentService extends Component
     }
 
     /**
-     * Returns all registered tools keyed by name.
-     *
      * @return array<string, ToolInterface>
      */
     public function getTools(): array
@@ -439,8 +416,6 @@ class AgentService extends Component
     }
 
     /**
-     * Returns tool definitions in normalized format for provider.
-     *
      * @return array<int, array<string, mixed>>
      */
     private function getToolDefinitions(): array
@@ -455,8 +430,6 @@ class AgentService extends Component
     }
 
     /**
-     * Executes a tool by name with the given arguments.
-     *
      * @param array<string, mixed> $arguments
      * @return array<string, mixed>
      */
@@ -473,7 +446,6 @@ class AgentService extends Component
             $arguments['_siteHandle'] = $this->activeSiteHandle;
         }
 
-        // Before-event: allow cancellation
         $beforeEvent = new ToolCallEvent();
         $beforeEvent->toolName = $toolName;
         $beforeEvent->params = $arguments;
@@ -499,22 +471,18 @@ class AgentService extends Component
             $result = ['error' => "Tool execution failed: {$e->getMessage()}"];
         }
 
-        // After-event: allow modification of result
         $afterEvent = new ToolCallEvent();
         $afterEvent->toolName = $toolName;
         $afterEvent->params = $arguments;
         $afterEvent->result = $result;
         $this->trigger(self::EVENT_AFTER_TOOL_CALL, $afterEvent);
 
-        // Log to audit
         $this->logToolCall($toolName, $arguments, $afterEvent->result ?? $result);
 
         return $afterEvent->result ?? $result;
     }
 
     /**
-     * Builds a human-readable summary of executed tool calls.
-     *
      * @param array<int, array{name: string, success: bool, entryId: int|null, entryTitle: string|null, cpEditUrl: string|null}> $toolCalls
      */
     private function buildToolCallSummary(array $toolCalls): string
@@ -537,8 +505,6 @@ class AgentService extends Component
     }
 
     /**
-     * Builds the debug payload returned alongside agent results.
-     *
      * @param array<int, array<string, mixed>> $messages
      * @return array<string, mixed>
      */
@@ -565,9 +531,6 @@ class AgentService extends Component
     private const ALLOWED_FILE_EXTENSIONS = ['txt', 'csv', 'json', 'xml', 'md', 'html', 'htm', 'yaml', 'yml', 'log'];
 
     /**
-     * Resolves attachment data (assets, files) and appends context to the user message.
-     * Validates permissions and input before processing.
-     *
      * @param array<int, array<string, mixed>> $attachments
      */
     private function enrichMessageWithAttachments(string $message, array $attachments): string
@@ -595,7 +558,6 @@ class AgentService extends Component
             if ($type === 'asset' && isset($attachment['id'])) {
                 $assetId = (int)$attachment['id'];
 
-                // Permission check — same as ReadAssetTool
                 $guard = $plugin->permissionGuard->canReadAsset($assetId);
                 if (!$guard['allowed']) {
                     continue;
@@ -609,7 +571,6 @@ class AgentService extends Component
                     $processed++;
                 }
             } elseif ($type === 'file' && isset($attachment['content']) && is_string($attachment['content'])) {
-                // Validate file extension
                 $extension = strtolower(pathinfo($label, PATHINFO_EXTENSION));
                 if (!in_array($extension, self::ALLOWED_FILE_EXTENSIONS, true)) {
                     continue;
@@ -617,7 +578,6 @@ class AgentService extends Component
 
                 $content = $attachment['content'];
 
-                // Reject files exceeding size limit
                 if (strlen($content) > self::MAX_FILE_SIZE) {
                     continue;
                 }
@@ -668,9 +628,6 @@ class AgentService extends Component
         }
     }
 
-    /**
-     * Resolves the site from a handle string, falling back to the context entry's site or current site.
-     */
     private function resolveSite(?string $siteHandle, ?Entry $contextEntry): ?Site
     {
         if ($siteHandle) {

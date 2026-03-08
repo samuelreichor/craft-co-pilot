@@ -443,7 +443,6 @@ class AnthropicProvider implements ProviderInterface
                 break;
 
             case 'message_delta':
-                // Usage info
                 $usage = $json['usage'] ?? [];
                 if (!empty($usage)) {
                     $onChunk(new StreamChunk(

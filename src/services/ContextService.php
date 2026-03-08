@@ -18,9 +18,7 @@ class ContextService extends Component
     public const EVENT_BEFORE_SERIALIZE_ENTRY = 'beforeSerializeEntry';
 
     /**
-     * Serializes an entry for AI context.
-     *
-     * @param string[]|null $fieldHandles Limit to specific fields
+     * @param string[]|null $fieldHandles
      * @return array<string, mixed>|null Returns null if cancelled by event
      */
     public function serializeEntry(Entry $entry, int $depth = 2, ?array $fieldHandles = null): ?array
@@ -35,8 +33,6 @@ class ContextService extends Component
     }
 
     /**
-     * Returns a lightweight summary of an entry: metadata, filled/empty fields, content summary, and language detection.
-     *
      * @return array<string, mixed>
      */
     public function summarizeEntry(Entry $entry): array
@@ -85,9 +81,6 @@ class ContextService extends Component
         ];
     }
 
-    /**
-     * Checks whether a field value is empty.
-     */
     public function isFieldEmpty(mixed $value): bool
     {
         if ($value === null || $value === '' || $value === []) {
@@ -106,8 +99,6 @@ class ContextService extends Component
     }
 
     /**
-     * Extracts text content from a field value and appends it to the parts array.
-     *
      * @param string[] $parts
      */
     private function collectText(mixed $value, array &$parts): void

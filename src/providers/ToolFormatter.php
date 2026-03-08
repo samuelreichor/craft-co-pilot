@@ -60,7 +60,7 @@ class ToolFormatter
                         'description' => $tool['description'],
                     ];
 
-                    // Omit parameters for parameterless tools — Gemini requires this
+                    // Gemini rejects parameterless tools if parameters key is present
                     if (self::hasProperties($tool['parameters'])) {
                         $declaration['parameters'] = self::sanitizeSchemaForGemini($tool['parameters']);
                     }

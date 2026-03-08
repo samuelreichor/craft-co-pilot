@@ -73,7 +73,6 @@ class UpdateEntryTool implements ToolInterface
 
         $plugin = CoPilot::getInstance();
 
-        // Permission check
         $guard = $plugin->permissionGuard->canWriteEntry($entryId);
         if (!$guard['allowed']) {
             return [
@@ -82,7 +81,7 @@ class UpdateEntryTool implements ToolInterface
             ];
         }
 
-        // Load entry from the correct site so nested elements inherit the right siteId
+        // Correct siteId needed so nested elements inherit it
         $query = Entry::find()->id($entryId)->status(null)->drafts(null);
 
         if ($siteHandle) {
@@ -104,10 +103,8 @@ class UpdateEntryTool implements ToolInterface
             ];
         }
 
-        // Strip serialization markers that AI models may echo back
         unset($fields['_type']);
 
-        // Capture old values and set new values
         $diff = [];
         $skippedFields = [];
         $nativeFields = ['title', 'slug'];
@@ -139,17 +136,15 @@ class UpdateEntryTool implements ToolInterface
             ];
         }
 
-        // Determine save behavior from settings
         $settings = CoPilot::getInstance()->getSettings();
         $updateBehavior = ElementUpdateBehavior::tryFrom($settings->elementUpdateBehavior)
             ?? ElementUpdateBehavior::ProvisionalDraft;
 
-        // For draft/provisional modes, we need to create a draft and re-apply field values
         $targetEntry = $entry;
         $behaviorMessage = 'Entry updated successfully.';
 
         if ($updateBehavior !== ElementUpdateBehavior::DirectSave) {
-            // Cannot create a draft from a draft — fall back to direct save on the draft
+            // Can't create a draft from a draft, fall back to direct save
             if ($entry->getIsDraft()) {
                 $behaviorMessage = 'Draft entry updated directly.';
             } else {
@@ -206,7 +201,6 @@ class UpdateEntryTool implements ToolInterface
         if (!$saved) {
             $errors = $targetEntry->getFirstErrors();
 
-            // Surface nested element errors
             foreach ($fields as $fieldHandle => $value) {
                 if (in_array($fieldHandle, $nativeFields, true)) {
                     continue;
@@ -247,13 +241,9 @@ class UpdateEntryTool implements ToolInterface
         return $result;
     }
 
-    /**
-     * Creates or retrieves the target entry (draft or provisional draft) for the given behavior.
-     */
     private function resolveTargetEntry(Entry $entry, \craft\elements\User $user, ElementUpdateBehavior $behavior): Entry
     {
         if ($behavior === ElementUpdateBehavior::ProvisionalDraft) {
-            // Reuse existing provisional draft if one exists for this user + entry
             $existingDraft = Entry::find()
                 ->provisionalDrafts()
                 ->draftOf($entry)
@@ -310,8 +300,6 @@ class UpdateEntryTool implements ToolInterface
     }
 
     /**
-     * Collects validation errors from nested elements (Addresses, ContentBlock).
-     *
      * @return array<int, array<string, string>>
      */
     private function collectNestedErrors(Entry $entry, string $fieldHandle): array
@@ -324,7 +312,6 @@ class UpdateEntryTool implements ToolInterface
             return [];
         }
 
-        // Address/relational queries with cached results
         if ($fieldValue instanceof \craft\elements\db\ElementQuery) {
             $elements = $fieldValue->getCachedResult() ?? [];
             foreach ($elements as $i => $element) {
@@ -334,7 +321,6 @@ class UpdateEntryTool implements ToolInterface
             }
         }
 
-        // ContentBlock element
         if ($fieldValue instanceof \craft\base\ElementInterface && $fieldValue->hasErrors()) {
             $nestedErrors[] = $fieldValue->getFirstErrors();
         }
@@ -347,6 +333,7 @@ class UpdateEntryTool implements ToolInterface
      *
      * Craft's Addresses field copies the owner entry's siteId to new addresses,
      * but Address elements are not localized and only support the primary site.
+     * This also recurses into nested Matrix blocks.
      */
     private function fixNewAddressSiteIds(Entry $entry, string $fieldHandle): void
     {
@@ -373,6 +360,47 @@ class UpdateEntryTool implements ToolInterface
         foreach ($cached as $nested) {
             if ($nested instanceof \craft\elements\Address && !$nested->id) {
                 $nested->siteId = $primarySiteId;
+            }
+
+            // Recurse into Matrix blocks (Entry elements in Craft 5)
+            if ($nested instanceof Entry) {
+                $this->fixAddressSiteIdsRecursive($nested, $primarySiteId);
+            }
+        }
+    }
+
+    /**
+     * Recursively fixes Address siteIds inside nested Entry elements (Matrix blocks).
+     */
+    private function fixAddressSiteIdsRecursive(Entry $block, int $primarySiteId): void
+    {
+        $fieldLayout = $block->getFieldLayout();
+
+        foreach ($fieldLayout->getCustomFields() as $field) {
+            try {
+                $value = $block->getFieldValue($field->handle);
+            } catch (\Throwable) {
+                continue;
+            }
+
+            if (!$value instanceof \craft\elements\db\ElementQuery) {
+                continue;
+            }
+
+            $cached = $value->getCachedResult();
+            if ($cached === null) {
+                continue;
+            }
+
+            foreach ($cached as $nested) {
+                if ($nested instanceof \craft\elements\Address && !$nested->id) {
+                    $nested->siteId = $primarySiteId;
+                }
+
+                // Recurse further for deeply nested Matrix blocks
+                if ($nested instanceof Entry) {
+                    $this->fixAddressSiteIdsRecursive($nested, $primarySiteId);
+                }
             }
         }
     }

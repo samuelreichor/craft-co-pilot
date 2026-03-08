@@ -67,16 +67,32 @@ class OptionsFieldTransformer implements FieldTransformerInterface
             return null;
         }
 
-        // Multi-value: array of option objects → array of value strings
         if (($field instanceof Checkboxes || $field instanceof MultiSelect) && is_array($value)) {
             return array_map(fn($item) => is_array($item) && isset($item['value']) ? $item['value'] : $item, $value);
         }
 
-        // Single-value: option object → value string
         if (is_array($value) && isset($value['value'])) {
             return $value['value'];
         }
 
+        if (is_array($value) && $this->isBooleanMap($value)) {
+            return array_keys(array_filter($value));
+        }
+
         return null;
+    }
+
+    /**
+     * @param array<string, mixed> $value
+     */
+    private function isBooleanMap(array $value): bool
+    {
+        foreach ($value as $v) {
+            if (!is_bool($v)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

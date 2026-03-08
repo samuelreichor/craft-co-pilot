@@ -47,7 +47,6 @@ class ChatController extends Controller
 
         $contextId = $this->request->getQueryParam('entryId');
 
-        // Validate conversation access — silently ignore invalid IDs
         $activeConversationId = null;
         if ($conversationId) {
             try {
@@ -133,7 +132,6 @@ class ChatController extends Controller
 
     /**
      * POST /actions/co-pilot/chat/export-debug
-     * Downloads the full debug log for a conversation as JSON.
      */
     public function actionExportDebug(): Response
     {
@@ -143,7 +141,6 @@ class ChatController extends Controller
         $id = $this->request->getRequiredBodyParam('id');
         $conversation = $this->getConversation((int)$id);
 
-        // Fetch audit log entries for this conversation
         $auditLog = (new \craft\db\Query())
             ->from(Constants::TABLE_AUDIT_LOG)
             ->where(['conversationId' => $conversation->id])
@@ -171,7 +168,6 @@ class ChatController extends Controller
 
     /**
      * GET /actions/co-pilot/chat/open-element?elementId=123
-     * Redirects to the element's CP edit URL.
      */
     public function actionOpenElement(): Response
     {
@@ -285,7 +281,6 @@ class ChatController extends Controller
         $model = $this->request->getBodyParam('model');
         $attachments = $this->request->getBodyParam('attachments') ?? [];
 
-        // Load history from DB when conversation exists
         $messages = [];
         if ($conversationId) {
             $conversation = $this->getConversation((int)$conversationId);
@@ -305,7 +300,6 @@ class ChatController extends Controller
                 $siteHandle,
             );
 
-        // Persist conversation
         $persistContextType = $contextType === 'entry' ? 'entry' : 'global';
         $persistContextId = $persistContextType === 'entry' && $contextId ? (int)$contextId : null;
 
@@ -321,13 +315,11 @@ class ChatController extends Controller
 
         $plugin->auditService->linkToConversation($conversationId);
 
-        // Optionally include debug messages for eval/debugging
         $includeDebug = (bool) $this->request->getBodyParam('debug');
         if ($includeDebug && isset($result['debug']['messages'])) {
             $result['debugMessages'] = $result['debug']['messages'];
         }
 
-        // Remove internal data from the client response
         unset($result['debug'], $result['newMessages']);
         $result['conversationId'] = $conversationId;
 
@@ -336,28 +328,23 @@ class ChatController extends Controller
 
     /**
      * POST /actions/co-pilot/chat/send-stream
-     *
-     * SSE endpoint that streams the AI response token by token.
      */
     public function actionSendStream(): void
     {
         $this->requirePostRequest();
         $this->requirePermission(Constants::PERMISSION_CREATE_CHAT);
 
-        // SSE headers
         header('Content-Type: text/event-stream');
         header('Cache-Control: no-cache');
         header('Connection: keep-alive');
         header('X-Accel-Buffering: no');
 
-        // Disable output buffering
         while (ob_get_level() > 0) {
             ob_end_flush();
         }
 
         $plugin = CoPilot::getInstance();
 
-        // Read JSON body (SSE uses fetch with JSON body)
         $rawBody = $this->request->getRawBody();
         $body = json_decode($rawBody, true) ?? [];
 
@@ -375,7 +362,6 @@ class ChatController extends Controller
             return;
         }
 
-        // Load history from db
         $messages = [];
         if ($conversationId) {
             $conversation = $this->getConversation((int)$conversationId);
@@ -396,7 +382,6 @@ class ChatController extends Controller
                 $siteHandle,
             );
 
-        // Persist conversation
         $persistContextType = $contextType === 'entry' ? 'entry' : 'global';
         $persistContextId = $persistContextType === 'entry' && $contextId ? (int)$contextId : null;
 
@@ -417,7 +402,6 @@ class ChatController extends Controller
                 . mb_substr($message, 0, 100));
         }
 
-        // Send done event
         $this->sendSSE('done', [
             'conversationId' => $conversationId,
             'inputTokens' => $result['inputTokens'],
@@ -447,8 +431,6 @@ class ChatController extends Controller
     }
 
     /**
-     * Loads a conversation by ID and checks access permissions.
-     *
      * @throws NotFoundHttpException
      * @throws ForbiddenHttpException|\Throwable
      */
@@ -496,7 +478,6 @@ class ChatController extends Controller
             $conversation = $plugin->conversationService->getById($conversationId);
         }
 
-        // Use the first user message for the title when creating a new conversation
         $title = 'New conversation';
         foreach ($newMessages as $msg) {
             if (($msg['role'] ?? '') === MessageRole::User->value && is_string($msg['content'] ?? null)) {
@@ -534,7 +515,6 @@ class ChatController extends Controller
     }
 
     /**
-     * Builds UI-ready messages from the full conversation history.
      * Collects tool call metadata from Tool-role messages and attaches them
      * to the next assistant message with content.
      *
@@ -561,7 +541,6 @@ class ChatController extends Controller
                 continue;
             }
 
-            // Skip intermediate assistant messages (tool calls only, no content)
             if ($msg->role === MessageRole::Assistant && $msg->content === null) {
                 continue;
             }

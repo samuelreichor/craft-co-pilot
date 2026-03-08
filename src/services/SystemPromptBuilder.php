@@ -195,7 +195,6 @@ class SystemPromptBuilder extends Component
             . "**CRITICAL**: When the user asks about CMS data (sections, entries, fields, assets), "
             . "you MUST call a tool to get the answer. NEVER respond with information you have not retrieved via a tool in this conversation.";
 
-        // Allow extensions via event
         $event = new BuildPromptEvent();
         $event->sections = $sections;
         $this->trigger(self::EVENT_BUILD_PROMPT, $event);

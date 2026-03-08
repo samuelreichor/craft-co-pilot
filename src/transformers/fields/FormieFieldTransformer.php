@@ -38,7 +38,6 @@ class FormieFieldTransformer implements FieldTransformerInterface
 
     public function serializeValue(FieldInterface $field, mixed $value, int $depth): mixed
     {
-        // ElementQuery of Form elements
         if (!is_object($value) || !method_exists($value, 'all')) {
             return $value;
         }

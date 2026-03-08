@@ -237,8 +237,7 @@ class RelationalFieldTransformer implements FieldTransformerInterface
     }
 
     /**
-     * Extracts element IDs from mixed formats (plain IDs or objects with 'id' key).
-     * Weak AI models may echo back full serialized objects instead of plain IDs.
+     * Weak models echo back full serialized objects instead of plain IDs.
      *
      * @param array<int, mixed> $value
      * @return array<int, int>
@@ -261,8 +260,6 @@ class RelationalFieldTransformer implements FieldTransformerInterface
     }
 
     /**
-     * Converts an AI-friendly indexed array of address objects into Craft's keyed format.
-     *
      * @param array<int|string, mixed> $value
      * @return array<string, mixed>
      */
@@ -324,9 +321,7 @@ class RelationalFieldTransformer implements FieldTransformerInterface
     }
 
     /**
-     * Resolves allowed source handles from a relational field's sources config.
-     *
-     * @return array<int, string>|null Resolved handles, or null if all sources are allowed.
+     * @return array<int, string>|null null means all sources are allowed
      */
     private function describeAllowedSources(FieldInterface $field, string $sourceType): ?array
     {

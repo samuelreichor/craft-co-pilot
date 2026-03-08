@@ -20,9 +20,6 @@ class ProviderService extends Component
     /** @var ProviderInterface[]|null */
     private ?array $providers = null;
 
-    /**
-     * Returns the currently active provider based on plugin settings.
-     */
     public function getActiveProvider(): ProviderInterface
     {
         $settings = CoPilot::getInstance()->getSettings();
@@ -32,9 +29,6 @@ class ProviderService extends Component
             ?? throw new \RuntimeException("Provider '{$settings->activeProvider}' not found.");
     }
 
-    /**
-     * Returns a specific provider by handle.
-     */
     public function getProvider(string $handle): ?ProviderInterface
     {
         return $this->getProviders()[$handle] ?? null;

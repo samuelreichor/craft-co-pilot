@@ -49,7 +49,6 @@ class SettingsController extends Controller
         $plugin = CoPilot::getInstance();
         $settings = $plugin->getSettings();
 
-        // Explicitly assign allowed fields
         $settings->brandVoice = $this->request->getBodyParam('brandVoice', $settings->brandVoice);
         $settings->glossary = $this->request->getBodyParam('glossary', $settings->glossary);
         $settings->forbiddenWords = $this->request->getBodyParam('forbiddenWords', $settings->forbiddenWords);
@@ -60,7 +59,6 @@ class SettingsController extends Controller
             return null;
         }
 
-        // Invalidate schema cache when settings change
         $plugin->schemaService->invalidateCache();
 
         Craft::$app->getSession()->setNotice('Plugin settings saved.');

@@ -339,8 +339,6 @@ class GeminiProvider implements ProviderInterface
     }
 
     /**
-     * Gemini uses streamGenerateContent which returns JSON chunks.
-     *
      * @param callable(StreamChunk): void $onChunk
      */
     private function sendStreamRequest(string $apiKey, string $model, array $payload, callable $onChunk): void
@@ -370,13 +368,11 @@ class GeminiProvider implements ProviderInterface
 
             $chunksProcessed++;
 
-            // Track finish_reason
             $chunkFinishReason = $json['candidates'][0]['finishReason'] ?? null;
             if ($chunkFinishReason !== null) {
                 $finishReason = $chunkFinishReason;
             }
 
-            // Track content types and accumulate raw parts for thought signature circulation
             $parts = $json['candidates'][0]['content']['parts'] ?? [];
             foreach ($parts as $part) {
                 if (isset($part['text']) && $part['text'] !== '') {
@@ -437,7 +433,6 @@ class GeminiProvider implements ProviderInterface
         } catch (\GuzzleHttp\Exception\RequestException $e) {
             $errorMsg = 'Gemini stream error: ' . $e->getMessage();
 
-            // Extract response body for detailed error logging
             $response = $e->getResponse();
             if ($response !== null) {
                 $body = (string)$response->getBody();
@@ -458,7 +453,6 @@ class GeminiProvider implements ProviderInterface
      */
     private function processGeminiStreamChunk(array $json, callable $onChunk): void
     {
-        // Usage metadata
         if (isset($json['usageMetadata'])) {
             $onChunk(new StreamChunk(
                 'usage',
@@ -487,8 +481,7 @@ class GeminiProvider implements ProviderInterface
     }
 
     /**
-     * Attempts to parse a malformed function call from Gemini's text output.
-     * Handles patterns like: print(default_api.updateEntry(entryId=238, fields={...}))
+     * Gemini sometimes outputs Python-style calls instead of structured functionCall parts.
      *
      * @return array{id: string, name: string, arguments: array<string, mixed>}|null
      */
@@ -496,7 +489,6 @@ class GeminiProvider implements ProviderInterface
     {
         $text = trim($text);
 
-        // Strip print() wrapper
         if (preg_match('/^print\s*\((.+)\)\s*$/s', $text, $m)) {
             $text = trim($m[1]);
         }
@@ -522,9 +514,6 @@ class GeminiProvider implements ProviderInterface
     }
 
     /**
-     * Parses Python-style keyword arguments into a PHP associative array.
-     * Example: entryId=238, fields={"key": "value"} → ['entryId' => 238, 'fields' => [...]]
-     *
      * @return array<string, mixed>|null
      */
     private function parsePythonKwargs(string $input): ?array
@@ -593,9 +582,6 @@ class GeminiProvider implements ProviderInterface
         return $pairs === [] ? null : $pairs;
     }
 
-    /**
-     * Converts a Python-style value string to a PHP value.
-     */
     private function convertPythonValue(string $value): mixed
     {
         if ($value === 'True' || $value === 'true') {
@@ -611,7 +597,6 @@ class GeminiProvider implements ProviderInterface
             return str_contains($value, '.') ? (float) $value : (int) $value;
         }
 
-        // Normalize Python syntax to JSON and try decoding
         $jsonValue = preg_replace('/\bTrue\b/', 'true', $value);
         $jsonValue = preg_replace('/\bFalse\b/', 'false', $jsonValue);
         $jsonValue = preg_replace('/\bNone\b/', 'null', $jsonValue);
@@ -621,7 +606,6 @@ class GeminiProvider implements ProviderInterface
             return $decoded;
         }
 
-        // Return as string, stripping surrounding quotes
         return trim($value, "\"'");
     }
 }

@@ -42,7 +42,6 @@ class FreeformFieldTransformer implements FieldTransformerInterface
             return null;
         }
 
-        // Single Form object
         if (is_object($value)) {
             $data = ['_type' => 'freeform_form'];
 
@@ -61,7 +60,6 @@ class FreeformFieldTransformer implements FieldTransformerInterface
             return $data;
         }
 
-        // Raw integer ID
         if (is_int($value)) {
             return ['_type' => 'freeform_form', 'id' => $value];
         }

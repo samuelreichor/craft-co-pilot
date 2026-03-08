@@ -57,7 +57,6 @@ class ReadEntryTool implements ToolInterface
         $detail = $arguments['detail'] ?? 'summary';
         $plugin = CoPilot::getInstance();
 
-        // Permission check
         $guard = $plugin->permissionGuard->canReadEntry($entryId);
         if (!$guard['allowed']) {
             return ['error' => $guard['reason']];
@@ -86,7 +85,6 @@ class ReadEntryTool implements ToolInterface
             return $plugin->contextService->summarizeEntry($entry);
         }
 
-        // Full mode — existing logic
         $settings = $plugin->getSettings();
         $depth = min($arguments['depth'] ?? $settings->defaultSerializationDepth, $settings->maxSerializationDepth);
         $fields = $arguments['fields'] ?? null;

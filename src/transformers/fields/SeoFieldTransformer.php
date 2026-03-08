@@ -45,7 +45,6 @@ class SeoFieldTransformer implements FieldTransformerInterface
             return $value;
         }
 
-        // MetaBundle → extract metaGlobalVars
         if (!property_exists($value, 'metaGlobalVars') || $value->metaGlobalVars === null) {
             return null;
         }
