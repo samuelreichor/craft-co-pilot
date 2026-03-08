@@ -6,6 +6,7 @@ use Craft;
 use craft\base\Element;
 use craft\elements\Entry;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\ElementCreationBehavior;
 use samuelreichor\coPilot\enums\SectionAccess;
 
 class CreateEntryTool implements ToolInterface
@@ -17,7 +18,7 @@ class CreateEntryTool implements ToolInterface
 
     public function getDescription(): string
     {
-        return 'Creates a new entry as an unpublished draft in a given section. The entry is never published directly. Always fill all fields defined in the entry type schema, especially required fields and ContentBlock fields.';
+        return 'Creates a new entry in a given section. The save behavior (draft, direct publish, or disabled) depends on plugin configuration. Always fill all fields defined in the entry type schema, especially required fields and ContentBlock fields.';
     }
 
     public function getParameters(): array
@@ -150,19 +151,44 @@ class CreateEntryTool implements ToolInterface
             }
         }
 
-        // Save as unpublished draft (no canonical entry)
-        $entry->setScenario(Element::SCENARIO_ESSENTIALS);
-        $success = Craft::$app->getDrafts()->saveElementAsDraft(
-            $entry,
-            $user->id,
-            'AI Agent Draft',
-        );
+        // Determine creation behavior from settings
+        $settings = CoPilot::getInstance()->getSettings();
+        $creationBehavior = ElementCreationBehavior::tryFrom($settings->elementCreationBehavior)
+            ?? ElementCreationBehavior::Draft;
+
+        switch ($creationBehavior) {
+            case ElementCreationBehavior::Draft:
+                $entry->setScenario(Element::SCENARIO_ESSENTIALS);
+                $success = Craft::$app->getDrafts()->saveElementAsDraft(
+                    $entry,
+                    $user->id,
+                    'CoPilot Draft',
+                );
+                $status = 'draft';
+                $behaviorMessage = 'Entry created successfully as an unpublished draft.';
+
+                break;
+            case ElementCreationBehavior::DirectSave:
+                $entry->enabled = true;
+                $success = Craft::$app->getElements()->saveElement($entry);
+                $status = 'live';
+                $behaviorMessage = 'Entry created and published successfully.';
+
+                break;
+            case ElementCreationBehavior::Disabled:
+                $entry->enabled = false;
+                $success = Craft::$app->getElements()->saveElement($entry);
+                $status = 'disabled';
+                $behaviorMessage = 'Entry created successfully (disabled, not publicly visible).';
+
+                break;
+        }
 
         if (!$success) {
             $errors = $entry->getFirstErrors();
 
             return [
-                'error' => 'Failed to save draft.',
+                'error' => 'Failed to save entry.',
                 'validationErrors' => $errors,
                 'retryHint' => 'Fix the fields listed in validationErrors and retry.',
             ];
@@ -179,19 +205,24 @@ class CreateEntryTool implements ToolInterface
             $createDiff[$fieldHandle] = ['old' => null, 'new' => $value];
         }
 
-        return [
+        $result = [
             'success' => true,
             'entryId' => $entry->id,
             'entryTitle' => $entry->title,
             'cpEditUrl' => $entry->getCpEditUrl(),
-            'draftId' => $entry->draftId,
             'title' => $entry->title,
             'section' => $sectionHandle,
             'type' => $entryTypeHandle,
-            'status' => 'draft',
+            'status' => $status,
             'diff' => $createDiff,
-            'message' => 'Entry created successfully as an unpublished draft.',
+            'message' => $behaviorMessage,
         ];
+
+        if ($entry->draftId) {
+            $result['draftId'] = $entry->draftId;
+        }
+
+        return $result;
     }
 
     private function findEntryType(int $sectionId, string $handle): ?\craft\models\EntryType

@@ -3,6 +3,8 @@
 namespace samuelreichor\coPilot\models;
 
 use craft\base\Model;
+use samuelreichor\coPilot\enums\ElementCreationBehavior;
+use samuelreichor\coPilot\enums\ElementUpdateBehavior;
 use samuelreichor\coPilot\enums\Provider;
 use samuelreichor\coPilot\enums\SectionAccess;
 
@@ -77,6 +79,10 @@ class Settings extends Model
     public int $maxContextTokens = 8000;
     public int $defaultSearchLimit = 20;
 
+    // Element persistence behavior
+    public string $elementUpdateBehavior = 'provisionalDraft';
+    public string $elementCreationBehavior = 'draft';
+
     // Data retention
     public int $auditLogRetentionDays = 30;
 
@@ -95,6 +101,8 @@ class Settings extends Model
             [['openaiApiKeyEnvVar', 'anthropicApiKeyEnvVar', 'geminiApiKeyEnvVar'], 'string'],
             ['webSearchEnabled', 'boolean'],
             ['debug', 'boolean'],
+            ['elementUpdateBehavior', 'in', 'range' => array_column(ElementUpdateBehavior::cases(), 'value')],
+            ['elementCreationBehavior', 'in', 'range' => array_column(ElementCreationBehavior::cases(), 'value')],
         ];
     }
 

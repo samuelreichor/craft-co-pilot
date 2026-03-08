@@ -66,7 +66,7 @@ class AgentService extends Component
         // Build context
         $contextEntry = null;
         if ($contextEntryId) {
-            $contextEntry = Entry::find()->id($contextEntryId)->status(null)->drafts(null)->one();
+            $contextEntry = Entry::find()->id($contextEntryId)->status(null)->drafts(null)->site('*')->one();
         }
 
         $site = $this->resolveSite($siteHandle, $contextEntry);
@@ -220,7 +220,7 @@ class AgentService extends Component
 
         $contextEntry = null;
         if ($contextEntryId) {
-            $contextEntry = Entry::find()->id($contextEntryId)->status(null)->drafts(null)->one();
+            $contextEntry = Entry::find()->id($contextEntryId)->status(null)->drafts(null)->site('*')->one();
         }
 
         $site = $this->resolveSite($siteHandle, $contextEntry);

@@ -5,6 +5,7 @@ namespace samuelreichor\coPilot\tools;
 use Craft;
 use craft\elements\Entry;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\ElementUpdateBehavior;
 
 class UpdateEntryTool implements ToolInterface
 {
@@ -138,8 +139,40 @@ class UpdateEntryTool implements ToolInterface
             ];
         }
 
+        // Determine save behavior from settings
+        $settings = CoPilot::getInstance()->getSettings();
+        $updateBehavior = ElementUpdateBehavior::tryFrom($settings->elementUpdateBehavior)
+            ?? ElementUpdateBehavior::ProvisionalDraft;
+
+        // For draft/provisional modes, we need to create a draft and re-apply field values
+        $targetEntry = $entry;
+        $behaviorMessage = 'Entry updated successfully.';
+
+        if ($updateBehavior !== ElementUpdateBehavior::DirectSave) {
+            // Cannot create a draft from a draft — fall back to direct save on the draft
+            if ($entry->getIsDraft()) {
+                $behaviorMessage = 'Draft entry updated directly.';
+            } else {
+                $user = Craft::$app->getUser()->getIdentity();
+                if (!$user) {
+                    return [
+                        'error' => 'Access denied – no authenticated user.',
+                        'retryHint' => null,
+                    ];
+                }
+
+                $targetEntry = $this->resolveTargetEntry($entry, $user, $updateBehavior);
+                $this->applyFields($targetEntry, $fields, $nativeFields);
+
+                $behaviorMessage = match ($updateBehavior) {
+                    ElementUpdateBehavior::Draft => 'Entry changes saved as a new draft.',
+                    ElementUpdateBehavior::ProvisionalDraft => 'Entry changes saved as a provisional draft (unsaved changes visible in the control panel).',
+                };
+            }
+        }
+
         try {
-            $saved = Craft::$app->getElements()->saveElement($entry);
+            $saved = Craft::$app->getElements()->saveElement($targetEntry);
         } catch (\craft\errors\UnsupportedSiteException $e) {
             $element = $e->element;
             $debugInfo = sprintf(
@@ -171,7 +204,7 @@ class UpdateEntryTool implements ToolInterface
         }
 
         if (!$saved) {
-            $errors = $entry->getFirstErrors();
+            $errors = $targetEntry->getFirstErrors();
 
             // Surface nested element errors
             foreach ($fields as $fieldHandle => $value) {
@@ -179,7 +212,7 @@ class UpdateEntryTool implements ToolInterface
                     continue;
                 }
 
-                $nestedErrors = $this->collectNestedErrors($entry, $fieldHandle);
+                $nestedErrors = $this->collectNestedErrors($targetEntry, $fieldHandle);
                 if (!empty($nestedErrors)) {
                     $errors["nestedElementErrors.{$fieldHandle}"] = $nestedErrors;
                 }
@@ -194,13 +227,17 @@ class UpdateEntryTool implements ToolInterface
 
         $result = [
             'success' => true,
-            'entryId' => $entry->id,
-            'entryTitle' => $entry->title,
-            'cpEditUrl' => $entry->getCpEditUrl(),
+            'entryId' => $targetEntry->id,
+            'entryTitle' => $targetEntry->title,
+            'cpEditUrl' => $targetEntry->getCpEditUrl(),
             'updatedFields' => array_keys($diff),
             'diff' => $diff,
-            'message' => 'Entry updated successfully. ' . count($diff) . ' field(s) changed in a single revision.',
+            'message' => $behaviorMessage . ' ' . count($diff) . ' field(s) changed.',
         ];
+
+        if ($targetEntry->draftId) {
+            $result['draftId'] = $targetEntry->draftId;
+        }
 
         if ($skippedFields !== []) {
             $result['skippedFields'] = $skippedFields;
@@ -208,6 +245,68 @@ class UpdateEntryTool implements ToolInterface
         }
 
         return $result;
+    }
+
+    /**
+     * Creates or retrieves the target entry (draft or provisional draft) for the given behavior.
+     */
+    private function resolveTargetEntry(Entry $entry, \craft\elements\User $user, ElementUpdateBehavior $behavior): Entry
+    {
+        if ($behavior === ElementUpdateBehavior::ProvisionalDraft) {
+            // Reuse existing provisional draft if one exists for this user + entry
+            $existingDraft = Entry::find()
+                ->provisionalDrafts()
+                ->draftOf($entry)
+                ->draftCreator($user->id)
+                ->siteId($entry->siteId)
+                ->status(null)
+                ->one();
+
+            if ($existingDraft) {
+                return $existingDraft;
+            }
+
+            return Craft::$app->getDrafts()->createDraft(
+                $entry,
+                $user->id,
+                null,
+                null,
+                [],
+                true,
+            );
+        }
+
+        // ElementUpdateBehavior::Draft
+        return Craft::$app->getDrafts()->createDraft(
+            $entry,
+            $user->id,
+            'CoPilot Draft',
+        );
+    }
+
+    /**
+     * Applies field values to a target entry.
+     *
+     * @param array<string, mixed> $fields
+     * @param array<int, string> $nativeFields
+     */
+    private function applyFields(Entry $target, array $fields, array $nativeFields): void
+    {
+        foreach ($fields as $fieldHandle => $value) {
+            if (in_array($fieldHandle, $nativeFields, true)) {
+                $target->{$fieldHandle} = $value;
+            } else {
+                $value = CoPilot::getInstance()->fieldNormalizer->normalize($fieldHandle, $value, $target);
+
+                try {
+                    $target->setFieldValue($fieldHandle, $value);
+                } catch (\Throwable) {
+                    continue;
+                }
+
+                $this->fixNewAddressSiteIds($target, $fieldHandle);
+            }
+        }
     }
 
     /**
