@@ -21,9 +21,9 @@ class Settings extends Model
     public string $geminiModel = 'gemini-2.5-flash';
 
     // Environment variable names for API keys
-    public string $openaiApiKeyEnvVar = 'OPENAI_API_KEY';
-    public string $anthropicApiKeyEnvVar = 'ANTHROPIC_API_KEY';
-    public string $geminiApiKeyEnvVar = 'GEMINI_API_KEY';
+    public string $openaiApiKeyEnvVar = '';
+    public string $anthropicApiKeyEnvVar = '';
+    public string $geminiApiKeyEnvVar = '';
 
     /**
      * Section access configuration.
@@ -32,18 +32,6 @@ class Settings extends Model
      * @var array<string, string>
      */
     public array $sectionAccess = [];
-
-    /**
-     * Plugin data blocklist.
-     * List of blocked plugin handles.
-     *
-     * @var array<int, string>
-     */
-    public array $blockedPlugins = [
-        'formie',
-        'freeform',
-        'campaign',
-    ];
 
     /**
      * Element type blocklist.
@@ -99,10 +87,8 @@ class Settings extends Model
             ['maxContextTokens', 'integer', 'min' => 1000, 'max' => 128000],
             ['defaultSearchLimit', 'integer', 'min' => 1, 'max' => 100],
             ['auditLogRetentionDays', 'integer', 'min' => 1, 'max' => 365],
-            [['brandVoice', 'glossary', 'forbiddenWords'], 'string'],
             [['openaiApiKeyEnvVar', 'anthropicApiKeyEnvVar', 'geminiApiKeyEnvVar'], 'string'],
-            ['webSearchEnabled', 'boolean'],
-            ['debug', 'boolean'],
+            ['webSearchEnabled', 'debug', 'boolean'],
             ['agentExecutionMode', 'in', 'range' => array_column(AgentExecutionMode::cases(), 'value')],
             ['elementUpdateBehavior', 'in', 'range' => array_column(ElementUpdateBehavior::cases(), 'value')],
             ['elementCreationBehavior', 'in', 'range' => array_column(ElementCreationBehavior::cases(), 'value')],
@@ -117,14 +103,6 @@ class Settings extends Model
         $value = $this->sectionAccess[$sectionUid] ?? SectionAccess::ReadWrite->value;
 
         return SectionAccess::tryFrom($value) ?? SectionAccess::ReadWrite;
-    }
-
-    /**
-     * Checks if a plugin handle is blocked.
-     */
-    public function isPluginBlocked(string $pluginHandle): bool
-    {
-        return in_array($pluginHandle, $this->blockedPlugins, true);
     }
 
     /**

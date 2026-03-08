@@ -72,38 +72,35 @@ class SettingsController extends Controller
         $this->requirePermission(Constants::PERMISSION_VIEW_BRAND_VOICE);
 
         $user = Craft::$app->getUser()->getIdentity();
+        $selectedSite = Cp::requestedSite();
+        $brandVoice = CoPilot::getInstance()->brandVoiceService->getBySiteId($selectedSite->id);
 
         return $this->renderTemplate('co-pilot/settings/brand-voice', [
-            'settings' => CoPilot::getInstance()->getSettings(),
+            'brandVoice' => $brandVoice,
             'canEdit' => $user && $user->can(Constants::PERMISSION_EDIT_BRAND_VOICE),
-            'selectedSite' => Cp::requestedSite(),
+            'selectedSite' => $selectedSite,
         ]);
     }
 
     /**
-     * POST /actions/co-pilot/settings/save
+     * POST /actions/co-pilot/settings/save-brand-voice
      */
-    public function actionSave(): ?Response
+    public function actionSaveBrandVoice(): ?Response
     {
         $this->requirePostRequest();
         $this->requirePermission(Constants::PERMISSION_EDIT_BRAND_VOICE);
 
-        $plugin = CoPilot::getInstance();
-        $settings = $plugin->getSettings();
+        $siteId = (int) $this->request->getRequiredBodyParam('siteId');
 
-        $settings->brandVoice = $this->request->getBodyParam('brandVoice', $settings->brandVoice);
-        $settings->glossary = $this->request->getBodyParam('glossary', $settings->glossary);
-        $settings->forbiddenWords = $this->request->getBodyParam('forbiddenWords', $settings->forbiddenWords);
+        CoPilot::getInstance()->brandVoiceService->saveBySiteId($siteId, [
+            'brandVoice' => $this->request->getBodyParam('brandVoice', ''),
+            'glossary' => $this->request->getBodyParam('glossary', ''),
+            'forbiddenWords' => $this->request->getBodyParam('forbiddenWords', ''),
+            'languageInstructions' => $this->request->getBodyParam('languageInstructions', ''),
+        ]);
 
-        if (!Craft::$app->getPlugins()->savePluginSettings($plugin, $settings->toArray())) {
-            Craft::$app->getSession()->setError('Couldn\'t save plugin settings.');
-
-            return null;
-        }
-
-        $plugin->schemaService->invalidateCache();
-
-        Craft::$app->getSession()->setNotice('Plugin settings saved.');
+        CoPilot::getInstance()->schemaService->invalidateCache();
+        Craft::$app->getSession()->setNotice('Brand voice settings saved.');
 
         return $this->redirectToPostedUrl();
     }

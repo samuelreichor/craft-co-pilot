@@ -48,28 +48,26 @@ class SystemPromptBuilder extends Component
             . "- **blog** — Blog (channel, read/write) — Entry types: Default Pagebuilder, Default Contentbuilder\\n"
             . "...\"";
 
-        // 3. Brand voice
-        if (!empty($settings->brandVoice)) {
-            $sections[] = "## Brand Voice & Style Guidelines\n" . $settings->brandVoice;
-        }
+        // 3-6. Brand voice (per-site)
+        $activeSite = $contextEntry ? $contextEntry->getSite() : $site;
+        if ($activeSite) {
+            $brandVoice = CoPilot::getInstance()->brandVoiceService->getBySiteId($activeSite->id);
 
-        // 4. Glossary
-        if (!empty($settings->glossary)) {
-            $sections[] = "## Terminology\nAlways use these terms:\n" . $settings->glossary;
-        }
-
-        // 5. Forbidden words
-        if (!empty($settings->forbiddenWords)) {
-            $sections[] = "## Forbidden Words/Phrases\nNever use these words. Use the suggested alternatives:\n" . $settings->forbiddenWords;
-        }
-
-        // 6. Language instructions
-        if (!empty($settings->languageInstructions)) {
-            $langParts = ["## Language-Specific Instructions"];
-            foreach ($settings->languageInstructions as $lang => $instructions) {
-                $langParts[] = "- {$lang}: {$instructions}";
+            if (!empty($brandVoice['brandVoice'])) {
+                $sections[] = "## Brand Voice & Style Guidelines\n" . $brandVoice['brandVoice'];
             }
-            $sections[] = implode("\n", $langParts);
+
+            if (!empty($brandVoice['glossary'])) {
+                $sections[] = "## Terminology\nAlways use these terms:\n" . $brandVoice['glossary'];
+            }
+
+            if (!empty($brandVoice['forbiddenWords'])) {
+                $sections[] = "## Forbidden Words/Phrases\nNever use these words. Use the suggested alternatives:\n" . $brandVoice['forbiddenWords'];
+            }
+
+            if (!empty($brandVoice['languageInstructions'])) {
+                $sections[] = "## Language-Specific Instructions\n" . $brandVoice['languageInstructions'];
+            }
         }
 
         // 7. Site context & current entry context

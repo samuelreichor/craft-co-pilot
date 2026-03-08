@@ -49,23 +49,3 @@
         <p class="light">No sections found.</p>
     {% endif %}
 
-    <hr>
-
-    <h3>Plugin Data Blocklist</h3>
-    <p class="light">Plugins that contain sensitive user data are blocked by default. Unblock at your own risk.</p>
-
-    {% set pluginOptions = [
-        { label: 'Formie (form submissions)', value: 'formie' },
-        { label: 'Freeform (form submissions)', value: 'freeform' },
-        { label: 'Campaign (email lists)', value: 'campaign' },
-    ] %}
-
-    {% for option in pluginOptions %}
-        {{ forms.checkboxField({
-            label: option.label,
-            id: 'blockedPlugin-' ~ option.value,
-            name: 'blockedPlugins[]',
-            value: option.value,
-            checked: option.value in settings.blockedPlugins,
-        }) }}
-    {% endfor %}

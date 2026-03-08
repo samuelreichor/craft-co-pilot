@@ -2,6 +2,7 @@
 
 {% set title = 'Brand Voice' %}
 {% set selectedSubnavItem = 'brand-voice' %}
+{% set fullPageForm = canEdit %}
 
 {% set selectableSites = craft.app.sites.getEditableSites() %}
 {% if selectableSites|length > 1 %}
@@ -19,58 +20,67 @@
 {% import '_includes/forms.twig' as forms %}
 
 {% block content %}
-    {% if canEdit %}
-    <form method="post" accept-charset="UTF-8">
-        {{ csrfInput() }}
-        {{ actionInput('co-pilot/settings/save') }}
-        {{ redirectInput('co-pilot/brand-voice') }}
-    {% endif %}
 
-        <h2>Brand Voice & Style</h2>
+    {{ actionInput('co-pilot/settings/save-brand-voice') }}
+    {{ redirectInput('co-pilot/brand-voice?site=' ~ selectedSite.handle) }}
+    {{ hiddenInput('siteId', selectedSite.id) }}
 
-        {{ forms.textareaField({
-            label: 'General Instructions',
-            instructions: 'Describe your brand voice and writing style. The AI will follow these guidelines when generating or editing content.',
-            id: 'brandVoice',
-            name: 'brandVoice',
-            value: settings.brandVoice,
-            rows: 8,
-            placeholder: 'We address our customers informally. Write in a casual but professional tone. Avoid jargon where possible. Use short sentences.',
-            disabled: not canEdit,
-        }) }}
+    <h2>Brand Voice & Style</h2>
 
-        <hr>
+    {{ forms.textareaField({
+        label: 'General Instructions',
+        instructions: 'Describe your brand voice and writing style. The AI will follow these guidelines when generating or editing content.',
+        id: 'brandVoice',
+        name: 'brandVoice',
+        value: brandVoice.brandVoice,
+        rows: 8,
+        placeholder: 'We address our customers informally. Write in a casual but professional tone. Avoid jargon where possible. Use short sentences.',
+        disabled: not canEdit,
+    }) }}
 
-        <h2>Terminology / Glossary</h2>
+    <hr>
 
-        {{ forms.textareaField({
-            label: 'Term Replacements',
-            instructions: 'Define terms the AI should always use. One per line. Format: "Wrong term" -> "Correct term"',
-            id: 'glossary',
-            name: 'glossary',
-            value: settings.glossary,
-            rows: 6,
-            placeholder: '"Workout" -> always use "Training"\n"Healthy" -> prefer "balanced"\n"User" -> "Member" (not "Customer")',
-            disabled: not canEdit,
-        }) }}
+    <h2>Terminology / Glossary</h2>
 
-        <hr>
+    {{ forms.textareaField({
+        label: 'Term Replacements',
+        instructions: 'Define terms the AI should always use. One per line. Format: "Wrong term" -> "Correct term"',
+        id: 'glossary',
+        name: 'glossary',
+        value: brandVoice.glossary,
+        rows: 6,
+        placeholder: '"Workout" -> always use "Training"\n"Healthy" -> prefer "balanced"\n"User" -> "Member" (not "Customer")',
+        disabled: not canEdit,
+    }) }}
 
-        <h2>Forbidden Words/Phrases</h2>
+    <hr>
 
-        {{ forms.textareaField({
-            label: 'Words to Avoid',
-            instructions: 'Words or phrases the AI should never use, with suggested alternatives. One per line.',
-            id: 'forbiddenWords',
-            name: 'forbiddenWords',
-            value: settings.forbiddenWords,
-            rows: 6,
-            placeholder: '"cheap" -> use "affordable" instead\n"simple" -> use "straightforward" instead',
-            disabled: not canEdit,
-        }) }}
+    <h2>Forbidden Words/Phrases</h2>
 
-        {% if canEdit %}
-        <button type="submit" class="btn submit">Save</button>
-    </form>
-    {% endif %}
+    {{ forms.textareaField({
+        label: 'Words to Avoid',
+        instructions: 'Words or phrases the AI should never use, with suggested alternatives. One per line.',
+        id: 'forbiddenWords',
+        name: 'forbiddenWords',
+        value: brandVoice.forbiddenWords,
+        rows: 6,
+        placeholder: '"cheap" -> use "affordable" instead\n"simple" -> use "straightforward" instead',
+        disabled: not canEdit,
+    }) }}
+
+    <hr>
+
+    <h2>Language Instructions</h2>
+
+    {{ forms.textareaField({
+        label: 'Language-Specific Instructions',
+        instructions: 'Instructions for writing in this site\'s language. For example: formality rules, spelling conventions, regional variants.',
+        id: 'languageInstructions',
+        name: 'languageInstructions',
+        value: brandVoice.languageInstructions,
+        rows: 6,
+        placeholder: 'Use formal "Sie" instead of "du". Use Swiss German spelling (e.g. "Strasse" instead of "Straße").',
+        disabled: not canEdit,
+    }) }}
+
 {% endblock %}

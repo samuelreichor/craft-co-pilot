@@ -7,6 +7,7 @@ final class Constants
     // Table Names
     public const TABLE_CONVERSATIONS = '{{%copilot_conversations}}';
     public const TABLE_AUDIT_LOG = '{{%copilot_audit_log}}';
+    public const TABLE_BRAND_VOICE = '{{%copilot_brand_voice}}';
 
     // Cache Keys
     public const CACHE_SCHEMA_PREFIX = 'copilot.schema.';
