@@ -81,13 +81,14 @@ class OpenAIProvider implements ProviderInterface
     public function getAvailableModels(): array
     {
         return [
+            'gpt-5.1',
+            'gpt-5-mini',
+            'gpt-5-nano',
             'gpt-4.1',
             'gpt-4.1-mini',
             'gpt-4.1-nano',
             'gpt-4o',
-            'gpt-4o-mini',
             'o3',
-            'o3-mini',
             'o4-mini',
         ];
     }
@@ -140,7 +141,7 @@ class OpenAIProvider implements ProviderInterface
                     'role' => 'tool',
                     'tool_call_id' => $message['toolCallId'],
                     'content' => is_array($message['content'])
-                        ? json_encode($message['content'])
+                        ? json_encode($message['content'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
                         : $message['content'],
                 ];
                 continue;
@@ -155,7 +156,7 @@ class OpenAIProvider implements ProviderInterface
                         'type' => 'function',
                         'function' => [
                             'name' => $tc['name'],
-                            'arguments' => json_encode($tc['arguments']),
+                            'arguments' => json_encode($tc['arguments'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
                         ],
                     ], $message['toolCalls']),
                 ];
@@ -165,7 +166,7 @@ class OpenAIProvider implements ProviderInterface
             $formatted[] = [
                 'role' => $role,
                 'content' => is_array($message['content'])
-                    ? json_encode($message['content'])
+                    ? json_encode($message['content'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
                     : $message['content'],
             ];
         }
@@ -225,7 +226,7 @@ class OpenAIProvider implements ProviderInterface
             $toolCalls = array_map(fn(array $tc) => [
                 'id' => $tc['id'],
                 'name' => $tc['function']['name'],
-                'arguments' => json_decode($tc['function']['arguments'], true) ?? [],
+                'arguments' => json_decode(self::fixBrokenUnicodeEscapes($tc['function']['arguments']), true) ?? [],
             ], $message['tool_calls']);
 
             return AIResponse::toolCall($toolCalls, $message['content'] ?? null, $inputTokens, $outputTokens);
@@ -323,7 +324,7 @@ class OpenAIProvider implements ProviderInterface
                     'tool_call',
                     toolCallId: $tc['id'],
                     toolName: $tc['name'],
-                    toolArguments: json_decode($tc['arguments'], true) ?? [],
+                    toolArguments: json_decode(self::fixBrokenUnicodeEscapes($tc['arguments']), true) ?? [],
                 ));
             }
         } catch (\Throwable $e) {
@@ -374,5 +375,15 @@ class OpenAIProvider implements ProviderInterface
                 }
             }
         }
+    }
+
+    /**
+     * Fixes broken Unicode escapes in JSON tool arguments from some models.
+     * Some models output \u0000XX (null char + hex) instead of \u00XX (proper Unicode escape).
+     * For example: \u0000e4 instead of \u00e4 (ä), \u0000f6 instead of \u00f6 (ö).
+     */
+    private static function fixBrokenUnicodeEscapes(string $json): string
+    {
+        return preg_replace('/\\\\u0000([0-9a-fA-F]{2})/', '\\u00$1', $json) ?? $json;
     }
 }

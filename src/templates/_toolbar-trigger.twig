@@ -15,8 +15,13 @@
     height: 20px;
 }
 
-/* Slideout shared styles */
-.co-pilot-craft-slideout .so-body {
+/* Slideout shared styles –
+   DOM: .slideout.co-pilot-craft-slideout > #co-pilot-slideout-vue-* > .co-pilot-slideout-body
+   Craft's .slideout already has display:flex; flex-direction:column; overflow:hidden.
+   We need every element in the chain to be a flex child that doesn't grow beyond its parent. */
+.co-pilot-craft-slideout > [id^="co-pilot-slideout-vue"] {
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -29,9 +34,19 @@
     overflow: hidden;
 }
 .co-pilot-slideout-body .co-pilot-chat-main {
-    height: auto;
     flex: 1;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.co-pilot-slideout-body .co-pilot-messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+.co-pilot-slideout-body .co-pilot-input {
+    flex-shrink: 0;
 }
 .co-pilot-slideout-actions {
     flex-shrink: 0;

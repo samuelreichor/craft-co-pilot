@@ -20,6 +20,7 @@ use samuelreichor\coPilot\tools\DescribeEntryTypeTool;
 use samuelreichor\coPilot\tools\DescribeSectionTool;
 use samuelreichor\coPilot\tools\ListSectionsTool;
 use samuelreichor\coPilot\tools\ReadAssetTool;
+use samuelreichor\coPilot\tools\ReadEntriesTool;
 use samuelreichor\coPilot\tools\ReadEntryTool;
 use samuelreichor\coPilot\tools\SearchAssetsTool;
 use samuelreichor\coPilot\tools\SearchEntriesTool;
@@ -368,8 +369,7 @@ class AgentService extends Component
                 ];
             }
 
-            // Reset for next iteration text
-            $fullText .= '';
+            // Next iteration will append new text
         }
 
         if ($fullText === '' && !$hadStreamError) {
@@ -415,6 +415,7 @@ class AgentService extends Component
         $event = new RegisterToolsEvent();
         $event->tools = [
             new ReadEntryTool(),
+            new ReadEntriesTool(),
             new UpdateEntryTool(),
             new CreateEntryTool(),
             new SearchEntriesTool(),

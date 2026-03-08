@@ -189,48 +189,45 @@ class SchemaService extends Component
      */
     private function buildSectionSchema(string $handle, bool $slim = false): array
     {
-        $settings = CoPilot::getInstance()->getSettings();
-        $permissionGuard = CoPilot::getInstance()->permissionGuard;
-        $sections = Craft::$app->getEntries()->getAllSections();
+        $section = Craft::$app->getEntries()->getSectionByHandle($handle);
 
-        foreach ($sections as $section) {
-            if ($section->handle !== $handle) {
-                continue;
-            }
-
-            $access = $settings->getSectionAccessLevel($section->uid);
-
-            if ($access === SectionAccess::Blocked) {
-                return ['error' => "Section '{$handle}' is blocked."];
-            }
-
-            $guardCheck = $permissionGuard->canReadSection($section->uid);
-            if (!$guardCheck['allowed']) {
-                return ['error' => "Access denied: {$guardCheck['reason']}"];
-            }
-
-            $permissions = ['read'];
-            if ($access === SectionAccess::ReadWrite) {
-                $permissions[] = 'write';
-            }
-
-            $entryTypes = [];
-            foreach ($section->getEntryTypes() as $entryType) {
-                $entryTypes[] = $slim
-                    ? $this->describeEntryTypeSlim($entryType)
-                    : $this->describeEntryType($entryType);
-            }
-
-            return [
-                'handle' => $section->handle,
-                'name' => $section->name,
-                'type' => $section->type,
-                'permissions' => $permissions,
-                'entryTypes' => $entryTypes,
-            ];
+        if ($section === null) {
+            return ['error' => "Section '{$handle}' not found."];
         }
 
-        return ['error' => "Section '{$handle}' not found."];
+        $settings = CoPilot::getInstance()->getSettings();
+        $permissionGuard = CoPilot::getInstance()->permissionGuard;
+
+        $access = $settings->getSectionAccessLevel($section->uid);
+
+        if ($access === SectionAccess::Blocked) {
+            return ['error' => "Section '{$handle}' is blocked."];
+        }
+
+        $guardCheck = $permissionGuard->canReadSection($section->uid);
+        if (!$guardCheck['allowed']) {
+            return ['error' => "Access denied: {$guardCheck['reason']}"];
+        }
+
+        $permissions = ['read'];
+        if ($access === SectionAccess::ReadWrite) {
+            $permissions[] = 'write';
+        }
+
+        $entryTypes = [];
+        foreach ($section->getEntryTypes() as $entryType) {
+            $entryTypes[] = $slim
+                ? $this->describeEntryTypeSlim($entryType)
+                : $this->describeEntryType($entryType);
+        }
+
+        return [
+            'handle' => $section->handle,
+            'name' => $section->name,
+            'type' => $section->type,
+            'permissions' => $permissions,
+            'entryTypes' => $entryTypes,
+        ];
     }
 
     /**

@@ -321,6 +321,12 @@ class ChatController extends Controller
 
         $plugin->auditService->linkToConversation($conversationId);
 
+        // Optionally include debug messages for eval/debugging
+        $includeDebug = (bool) $this->request->getBodyParam('debug');
+        if ($includeDebug && isset($result['debug']['messages'])) {
+            $result['debugMessages'] = $result['debug']['messages'];
+        }
+
         // Remove internal data from the client response
         unset($result['debug'], $result['newMessages']);
         $result['conversationId'] = $conversationId;

@@ -8,6 +8,7 @@ use craft\db\Query;
 use craft\helpers\Db;
 use craft\helpers\StringHelper;
 use samuelreichor\coPilot\constants\Constants;
+use samuelreichor\coPilot\helpers\Logger;
 use samuelreichor\coPilot\models\Conversation;
 use samuelreichor\coPilot\models\Message;
 
@@ -208,8 +209,8 @@ class ConversationService extends Component
         foreach ($messagesData as $msgData) {
             try {
                 $conversation->addMessage(Message::fromArray($msgData));
-            } catch (\InvalidArgumentException) {
-                // Skip invalid messages from legacy data
+            } catch (\InvalidArgumentException $e) {
+                Logger::warning("Skipping invalid message in conversation #{$conversation->id}: " . $e->getMessage());
             }
         }
 

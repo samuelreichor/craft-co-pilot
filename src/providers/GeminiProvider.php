@@ -61,11 +61,10 @@ class GeminiProvider implements ProviderInterface
     public function getAvailableModels(): array
     {
         return [
+            'gemini-3.1-pro-preview',
+            'gemini-3-flash-preview',
             'gemini-2.5-pro',
             'gemini-2.5-flash',
-            'gemini-2.5-flash-lite',
-            'gemini-3-pro-preview',
-            'gemini-3-flash-preview',
         ];
     }
 
@@ -131,15 +130,19 @@ class GeminiProvider implements ProviderInterface
             $role = $message['role'];
 
             if ($role === 'tool') {
+                // Gemini expects response as a Struct (JSON object). Ensure arrays
+                // from DB round-trips are cast to objects so json_encode produces {}.
+                $responseContent = is_array($message['content']) && $message['content'] !== []
+                    ? $message['content']
+                    : ['result' => $message['content']];
+
                 $formatted[] = [
                     'role' => 'user',
                     'parts' => [
                         [
                             'functionResponse' => [
                                 'name' => $message['toolName'] ?? 'unknown',
-                                'response' => is_array($message['content'])
-                                    ? $message['content']
-                                    : ['result' => $message['content']],
+                                'response' => (object)$responseContent,
                             ],
                         ],
                     ],
@@ -153,7 +156,7 @@ class GeminiProvider implements ProviderInterface
                 if (!empty($message['rawModelParts'])) {
                     $formatted[] = [
                         'role' => 'model',
-                        'parts' => $message['rawModelParts'],
+                        'parts' => $this->sanitizeRawModelParts($message['rawModelParts']),
                     ];
                     continue;
                 }
@@ -187,7 +190,7 @@ class GeminiProvider implements ProviderInterface
                 'parts' => [
                     [
                         'text' => is_array($message['content'])
-                            ? json_encode($message['content'])
+                            ? json_encode($message['content'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
                             : $message['content'],
                     ],
                 ],
@@ -195,6 +198,27 @@ class GeminiProvider implements ProviderInterface
         }
 
         return $formatted;
+    }
+
+    /**
+     * Ensures rawModelParts are safe to re-send to the Gemini API.
+     *
+     * After a DB round-trip, empty JSON objects ({}) become empty PHP arrays ([]).
+     * json_encode([]) produces [] (JSON array), but Gemini's protobuf schema expects
+     * Struct fields (like functionCall.args) to be JSON objects ({}).
+     *
+     * @param array<int, array<string, mixed>> $parts
+     * @return array<int, array<string, mixed>>
+     */
+    private function sanitizeRawModelParts(array $parts): array
+    {
+        foreach ($parts as &$part) {
+            if (isset($part['functionCall'])) {
+                $part['functionCall']['args'] = (object)($part['functionCall']['args'] ?? []);
+            }
+        }
+
+        return $parts;
     }
 
     private function sendRequest(string $apiKey, string $model, array $payload): AIResponse

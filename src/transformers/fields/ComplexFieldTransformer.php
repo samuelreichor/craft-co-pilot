@@ -2,6 +2,7 @@
 
 namespace samuelreichor\coPilot\transformers\fields;
 
+use Craft;
 use craft\base\FieldInterface;
 use craft\elements\ContentBlock as ContentBlockElement;
 use craft\elements\Entry;
@@ -69,8 +70,8 @@ class ComplexFieldTransformer implements FieldTransformerInterface
             $field instanceof ContentBlockField && $value === null => $this->buildEmptyContentBlockFields($field),
             $field instanceof ContentBlockField && is_array($value) && empty($value) => $this->buildEmptyContentBlockFields($field),
             $field instanceof ContentBlockField && is_array($value) => $this->normalizeContentBlockValue($value),
-            $field instanceof LinkField && (is_int($value) || (is_string($value) && ctype_digit($value))) => ['type' => 'entry', 'value' => (int) $value],
-            $field instanceof LinkField && is_array($value) => $this->normalizeLinkValue($value),
+            $field instanceof LinkField && (is_int($value) || (is_string($value) && ctype_digit($value))) => $this->normalizeLinkValue(['type' => 'entry', 'value' => (int) $value], $entry),
+            $field instanceof LinkField && is_array($value) => $this->normalizeLinkValue($value, $entry),
             $field instanceof MoneyField && is_array($value) && isset($value['amount']) => (int) $value['amount'],
             $field instanceof MoneyField && ($value === 0 || $value === '0') => 0,
             $field instanceof TableField && $value === null => [],
@@ -347,7 +348,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @param array<string, mixed> $value
      * @return array<string, mixed>
      */
-    private function normalizeLinkValue(array $value): array
+    private function normalizeLinkValue(array $value, ?Entry $entry = null): array
     {
         $keyMappings = [
             'url' => 'url',
@@ -378,7 +379,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         }
 
         if (isset($value['value'])) {
-            $value['value'] = $this->prefixLinkValue((string) $value['type'], $value['value']);
+            $value['value'] = $this->prefixLinkValue((string) $value['type'], $value['value'], $entry);
         }
 
         return $value;
@@ -431,8 +432,18 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         return 'url';
     }
 
-    private function prefixLinkValue(string $type, mixed $value): mixed
+    private function prefixLinkValue(string $type, mixed $value, ?Entry $entry = null): mixed
     {
+        // Convert numeric element IDs to Craft reference tags for entry/asset/category links.
+        // This ensures the correct siteId is used (from the entry being edited) instead of
+        // relying on Craft's getCurrentSite() which may differ in API/CLI contexts.
+        $elementTypes = ['entry', 'asset', 'category'];
+        if (in_array($type, $elementTypes, true) && (is_int($value) || (is_string($value) && ctype_digit($value)))) {
+            $siteId = $entry?->siteId ?? Craft::$app->getSites()->getCurrentSite()->id;
+
+            return sprintf('{%s:%s@%s:url}', $type, $value, $siteId);
+        }
+
         if (!is_string($value)) {
             return $value;
         }

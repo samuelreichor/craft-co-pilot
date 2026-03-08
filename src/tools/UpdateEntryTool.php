@@ -27,6 +27,10 @@ class UpdateEntryTool implements ToolInterface
                     'type' => 'integer',
                     'description' => 'The Craft entry ID',
                 ],
+                'siteHandle' => [
+                    'type' => 'string',
+                    'description' => 'Optional site handle to target a specific site version of the entry (e.g. "evalDe"). Defaults to the current conversation site.',
+                ],
                 'fields' => [
                     'type' => 'object',
                     'description' => 'An object mapping field handles to their new values. Example: {"title": "New Title", "excerpt": "Summary text", "tags": [10, 11]}. Supports all field types (see Field Value Formats).',
@@ -39,15 +43,24 @@ class UpdateEntryTool implements ToolInterface
     public function execute(array $arguments): array
     {
         $entryId = $arguments['entryId'];
+        $siteHandle = $arguments['siteHandle'] ?? $arguments['_siteHandle'] ?? null;
 
         // AI models sometimes send field values as top-level arguments instead of
         // wrapping them in a "fields" object. Detect and normalize this.
         if (!isset($arguments['fields'])) {
-            $reserved = ['entryId'];
+            $reserved = ['entryId', 'siteHandle', '_siteHandle'];
             $flatFields = array_diff_key($arguments, array_flip($reserved));
             $fields = $flatFields !== [] ? $flatFields : [];
         } else {
             $fields = $arguments['fields'];
+
+            // Models may send native fields (title, slug) at top level alongside a "fields" object.
+            // Merge them in so they aren't silently dropped.
+            foreach (['title', 'slug'] as $native) {
+                if (isset($arguments[$native]) && !isset($fields[$native])) {
+                    $fields[$native] = $arguments[$native];
+                }
+            }
         }
 
         if (!is_array($fields) || $fields === []) {
@@ -68,7 +81,21 @@ class UpdateEntryTool implements ToolInterface
             ];
         }
 
-        $entry = Entry::find()->id($entryId)->site('*')->status(null)->drafts(null)->one();
+        // Load entry from the correct site so nested elements inherit the right siteId
+        $query = Entry::find()->id($entryId)->status(null)->drafts(null);
+
+        if ($siteHandle) {
+            $site = Craft::$app->getSites()->getSiteByHandle($siteHandle);
+            if ($site) {
+                $query->siteId($site->id);
+            } else {
+                $query->site('*');
+            }
+        } else {
+            $query->site('*');
+        }
+
+        $entry = $query->one();
         if (!$entry) {
             return [
                 'error' => "Entry #{$entryId} not found.",
@@ -99,6 +126,10 @@ class UpdateEntryTool implements ToolInterface
 
                     continue;
                 }
+
+                // Address elements only support the primary site, but Craft's
+                // Addresses field copies the owner's siteId to new addresses.
+                $this->fixNewAddressSiteIds($entry, $fieldHandle);
             }
 
             $diff[$fieldHandle] = [
@@ -109,6 +140,22 @@ class UpdateEntryTool implements ToolInterface
 
         try {
             $saved = Craft::$app->getElements()->saveElement($entry);
+        } catch (\craft\errors\UnsupportedSiteException $e) {
+            $element = $e->element;
+            $debugInfo = sprintf(
+                'elementType=%s, elementId=%s, siteId=%s, entrySiteId=%s, siteHandle=%s',
+                get_class($element),
+                $element->id ?? 'new',
+                $e->siteId,
+                $entry->siteId,
+                $siteHandle ?? 'null',
+            );
+            Craft::warning("UpdateEntry UnsupportedSiteException: {$debugInfo}", 'co-pilot');
+
+            return [
+                'error' => "Save failed: {$e->getMessage()} ({$debugInfo})",
+                'retryHint' => null,
+            ];
         } catch (\Throwable $e) {
             $message = $e->getMessage();
             $retryHint = null;
@@ -194,6 +241,41 @@ class UpdateEntryTool implements ToolInterface
         }
 
         return $nestedErrors;
+    }
+
+    /**
+     * Fixes siteId on new Address elements after setFieldValue.
+     *
+     * Craft's Addresses field copies the owner entry's siteId to new addresses,
+     * but Address elements are not localized and only support the primary site.
+     */
+    private function fixNewAddressSiteIds(Entry $entry, string $fieldHandle): void
+    {
+        $primarySiteId = Craft::$app->getSites()->getPrimarySite()->id;
+        if ($entry->siteId === $primarySiteId) {
+            return;
+        }
+
+        try {
+            $fieldValue = $entry->getFieldValue($fieldHandle);
+        } catch (\Throwable) {
+            return;
+        }
+
+        if (!$fieldValue instanceof \craft\elements\db\ElementQuery) {
+            return;
+        }
+
+        $cached = $fieldValue->getCachedResult();
+        if ($cached === null) {
+            return;
+        }
+
+        foreach ($cached as $nested) {
+            if ($nested instanceof \craft\elements\Address && !$nested->id) {
+                $nested->siteId = $primarySiteId;
+            }
+        }
     }
 
     private function getFieldValue(Entry $entry, string $fieldHandle): mixed

@@ -77,11 +77,6 @@ async function loadHistory() {
   historyLoaded.value = true;
 
   await fetchConversations();
-
-  // Auto-load the most recent conversation
-  if (conversations.value.length > 0) {
-    await loadConversation(conversations.value[0].id);
-  }
 }
 
 function selectConversation(id: number) {

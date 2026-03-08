@@ -195,7 +195,7 @@ class AuditService extends Component
     private function resolveAction(string $toolName): string
     {
         return match ($toolName) {
-            'readEntry', 'readAsset', 'listSections' => 'read',
+            'readEntry', 'readEntries', 'readAsset', 'listSections', 'describeSection', 'describeEntryType' => 'read',
             'updateField', 'updateEntry' => 'update',
             'createEntry' => 'create',
             'searchEntries', 'searchAssets', 'searchUsers', 'searchTags' => 'search',

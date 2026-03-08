@@ -160,7 +160,7 @@ class AnthropicProvider implements ProviderInterface
                     'type' => 'tool_result',
                     'tool_use_id' => $message['toolCallId'],
                     'content' => is_array($message['content'])
-                        ? json_encode($message['content'])
+                        ? json_encode($message['content'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
                         : $message['content'],
                 ];
 
@@ -206,7 +206,7 @@ class AnthropicProvider implements ProviderInterface
             $formatted[] = [
                 'role' => $role,
                 'content' => is_array($message['content'])
-                    ? json_encode($message['content'])
+                    ? json_encode($message['content'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
                     : $message['content'],
             ];
         }
