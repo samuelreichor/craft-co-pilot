@@ -406,7 +406,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         // Use the AI-provided handle (may be a custom layout handle) for Matrix merging
         $handle = CoPilot::getInstance()->fieldNormalizer->getCurrentFieldHandle() ?? $field->handle;
 
-        return $this->normalizeMatrixValue($value, $entry, $handle);
+        return $this->normalizeMatrixValue($value, $entry, $handle, $field);
     }
 
     private function detectLinkType(mixed $value): string
@@ -466,7 +466,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @param array<int|string, mixed> $value
      * @return array<string, mixed>
      */
-    private function normalizeMatrixValue(array $value, ?Entry $entry, string $fieldHandle): array
+    private function normalizeMatrixValue(array $value, ?Entry $entry, string $fieldHandle, ?MatrixField $matrixField = null): array
     {
         if (isset($value['entries'])) {
             return $value;
@@ -503,7 +503,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
                 continue;
             }
 
-            $block = $this->normalizeMatrixBlock($block);
+            $block = $this->normalizeMatrixBlock($block, $matrixField);
             $key = 'new' . $newIndex++;
             $newSortOrder[] = $key;
             $newEntries[$key] = $block;
@@ -522,12 +522,13 @@ class ComplexFieldTransformer implements FieldTransformerInterface
     /**
      * Normalizes a single Matrix block from AI format to Craft format.
      * Handles: _blockType→type fallback, stripping serialization markers,
-     * and restructuring flat blocks into {type, title, fields} format.
+     * restructuring flat blocks into {type, title, fields} format,
+     * and normalizing sub-fields (ContentBlock, nested Matrix, etc.) via their transformers.
      *
      * @param array<string, mixed> $block
      * @return array<string, mixed>
      */
-    private function normalizeMatrixBlock(array $block): array
+    private function normalizeMatrixBlock(array $block, ?MatrixField $matrixField = null): array
     {
         // Use _blockType as type fallback
         if (!isset($block['type']) && isset($block['_blockType'])) {
@@ -560,33 +561,109 @@ class ComplexFieldTransformer implements FieldTransformerInterface
                 unset($block['fields'][$native]);
             }
 
-            // Recursively normalize nested matrix-like fields
-            foreach ($block['fields'] as $key => $value) {
-                if (!is_array($value)) {
-                    continue;
-                }
-
-                // Nested Matrix in {"blocks": [...]} or {"_replace": true, "blocks": [...]} format
-                if (isset($value['blocks']) && is_array($value['blocks'])) {
-                    $block['fields'][$key] = $this->normalizeMatrixValue($value, null, $key);
-
-                    continue;
-                }
-
-                // Flat list of block objects
-                if (array_is_list($value)) {
-                    $block['fields'][$key] = array_map(function($item) {
-                        if (is_array($item) && (isset($item['type']) || isset($item['_blockType']))) {
-                            return $this->normalizeMatrixBlock($item);
-                        }
-
-                        return $item;
-                    }, $value);
-                }
+            // Normalize sub-fields via their transformers (handles ContentBlock, nested Matrix, etc.)
+            if ($matrixField !== null && isset($block['type'])) {
+                $block['fields'] = $this->normalizeBlockSubFields($block['fields'], $matrixField, $block['type']);
+            } else {
+                $block['fields'] = $this->normalizeNestedFieldsByPattern($block['fields']);
             }
         }
 
         return $block;
+    }
+
+    /**
+     * Normalizes sub-fields of a Matrix block using field type resolution.
+     * Resolves the entry type from the Matrix field, then runs each sub-field
+     * through its transformer's normalizeValue().
+     *
+     * @param array<string, mixed> $fields
+     * @return array<string, mixed>
+     */
+    private function normalizeBlockSubFields(array $fields, MatrixField $matrixField, string $blockTypeHandle): array
+    {
+        $fieldLayout = $this->resolveBlockFieldLayout($matrixField, $blockTypeHandle);
+
+        if ($fieldLayout === null) {
+            return $this->normalizeNestedFieldsByPattern($fields);
+        }
+
+        $registry = CoPilot::getInstance()->transformerRegistry;
+
+        foreach ($fields as $handle => $value) {
+            if (!is_array($value)) {
+                continue;
+            }
+
+            $field = $fieldLayout->getFieldByHandle($handle);
+
+            if ($field === null) {
+                continue;
+            }
+
+            $transformer = $registry->getTransformerForField($field);
+
+            if ($transformer === null) {
+                continue;
+            }
+
+            $normalized = $transformer->normalizeValue($field, $value);
+
+            if ($normalized !== null) {
+                $fields[$handle] = $normalized;
+            }
+        }
+
+        return $fields;
+    }
+
+    /**
+     * Resolves the field layout for a given block type handle within a Matrix field.
+     */
+    private function resolveBlockFieldLayout(MatrixField $matrixField, string $blockTypeHandle): ?\craft\models\FieldLayout
+    {
+        foreach ($matrixField->getEntryTypes() as $entryType) {
+            if ($entryType->handle === $blockTypeHandle) {
+                return $entryType->getFieldLayout();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Fallback: pattern-based normalization for nested fields when no field context is available.
+     *
+     * @param array<string, mixed> $fields
+     * @return array<string, mixed>
+     */
+    private function normalizeNestedFieldsByPattern(array $fields): array
+    {
+        foreach ($fields as $key => $value) {
+            if (!is_array($value)) {
+                continue;
+            }
+
+            // Nested Matrix in {"blocks": [...]} or {"_replace": true, "blocks": [...]} format
+            if (isset($value['blocks']) && is_array($value['blocks'])) {
+                $fields[$key] = $this->normalizeMatrixValue($value, null, $key);
+
+                continue;
+            }
+
+            // Flat list of block objects
+            if (array_is_list($value)) {
+                $fields[$key] = array_map(function($item) {
+                    if (is_array($item) && (isset($item['type']) || isset($item['_blockType']))) {
+                        return $this->normalizeMatrixBlock($item);
+                    }
+
+                    return $item;
+                }, $value);
+            }
+        }
+
+        return $fields;
     }
 
     /**
