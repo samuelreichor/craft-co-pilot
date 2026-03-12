@@ -24,7 +24,7 @@ OPENAI_API_KEY=sk-...
 ```
 
 Create `config/co-pilot.php`:
-
+> This file will overwrite the settings in the control panel.
 ```php
 <?php
 
@@ -33,9 +33,9 @@ return [
     'activeProvider' => 'openai',
 
     // API key env var names (must be set in .env)
-    'openaiApiKeyEnvVar' => 'OPENAI_API_KEY',
-    'anthropicApiKeyEnvVar' => 'ANTHROPIC_API_KEY',
-    'geminiApiKeyEnvVar' => 'GEMINI_API_KEY',
+    'openaiApiKeyEnvVar' => '$OPENAI_API_KEY',
+    'anthropicApiKeyEnvVar' => '$ANTHROPIC_API_KEY',
+    'geminiApiKeyEnvVar' => '$GEMINI_API_KEY',
 ];
 ```
 
