@@ -19,6 +19,7 @@ use samuelreichor\coPilot\tools\CreateEntryTool;
 use samuelreichor\coPilot\tools\DescribeEntryTypeTool;
 use samuelreichor\coPilot\tools\DescribeSectionTool;
 use samuelreichor\coPilot\tools\ListSectionsTool;
+use samuelreichor\coPilot\tools\ListSitesTool;
 use samuelreichor\coPilot\tools\ReadAssetTool;
 use samuelreichor\coPilot\tools\ReadEntriesTool;
 use samuelreichor\coPilot\tools\ReadEntryTool;
@@ -404,6 +405,7 @@ class AgentService extends Component
             new SearchTagsTool(),
             new SearchUsersTool(),
             new ListSectionsTool(),
+            new ListSitesTool(),
             new DescribeSectionTool(),
             new DescribeEntryTypeTool(),
             new ReadAssetTool(),

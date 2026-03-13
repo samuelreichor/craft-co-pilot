@@ -119,14 +119,29 @@ class SystemPromptBuilder extends Component
             . "Names like \"Pagebuilder\" or \"Contentbuilder\" do NOT describe the actual fields. "
             . "Call describeSection first to see what fields each entry type has, then recommend based on actual field definitions.";
 
-        // 9. Field value format hints
+        // 9. Multi-site & translation
+        $sections[] = "## Multi-Site & Translation\n"
+            . "- Call **listSites** to discover all configured sites (handles, languages).\n"
+            . "- When the user asks to translate entries, **never ask for site handles** — call listSites to discover them.\n"
+            . "- Translation workflow:\n"
+            . "  1. listSites → identify source and target site handles\n"
+            . "  2. readEntry/readEntries from the **source site** (siteHandle parameter)\n"
+            . "  3. Translate the content\n"
+            . "  4. updateEntry with **siteHandle** set to the target site AND **fields** containing the translated values (title, slug, content, etc.)\n"
+            . "- **CRITICAL**: updateEntry with a siteHandle STILL requires the `fields` parameter with translated content. "
+            . "Setting siteHandle alone does NOT copy or translate anything — you MUST provide the translated field values.\n"
+            . "- When writing to a different site, set the content language to match that site's language (from listSites), not the active site's language.\n"
+            . "- searchEntries also accepts a `site` parameter to search entries on a specific site.\n"
+            . "- updateEntry automatically propagates entries to the target site if they don't exist there yet (as long as the section supports that site).";
+
+        // 10. Field value format hints
         $sections[] = "## Field Value Formats\n"
             . "Each field in the schema includes a 'valueFormat' key and optionally a 'hint'. Follow these exactly.\n"
             . "- Matrix: APPENDS by default — use {\"blocks\": [...]}. NEVER use _replace unless the user explicitly asks to replace all existing blocks. Clear: [].\n"
             . "- To update an existing Matrix block's field, use updateEntry with the block's _blockId as entryId.\n"
             . "- ContentBlocks: use updateEntry on the PARENT entry. Include ALL sub-field values to avoid overwriting.";
 
-        // 10. Content operations
+        // 11. Content operations
         $sections[] = "## Content Operations\n"
             . "- Use updateEntry for all field changes — single or multiple fields in one revision.\n"
             . "- Fill ALL fields in the schema, not just title. Required fields MUST have a value.\n"
@@ -153,7 +168,7 @@ class SystemPromptBuilder extends Component
             . "createEntry returns an entryId. To add content (hero, builder blocks, fields), call updateEntry with that entryId. "
             . "NEVER call createEntry a second time for the same purpose — one draft per intent.";
 
-        // 11. Action hierarchy
+        // 12. Action hierarchy
         $executionMode = AgentExecutionMode::tryFrom($executionMode ?? $settings->agentExecutionMode)
             ?? AgentExecutionMode::Supervised;
 
@@ -180,7 +195,7 @@ class SystemPromptBuilder extends Component
                 . "After confirmation, execute without further commentary — just do it and report results.";
         }
 
-        // 12. Error handling
+        // 13. Error handling
         $sections[] = "## Error Handling\n"
             . "Tool errors include a `retryHint` field:\n"
             . "- `retryHint` is null → do NOT retry. Inform the user.\n"
@@ -189,7 +204,7 @@ class SystemPromptBuilder extends Component
             . "If access is denied, inform the user and do NOT retry.\n"
             . "NEVER claim changes were successful before receiving tool results.";
 
-        // 13. Safety rules
+        // 14. Safety rules
         $sections[] = "## Rules\n"
             . "- NEVER fabricate content schemas. All section information MUST come from listSections, all field information MUST come from describeSection. "
             . "If asked about structure, call the appropriate tool and report exactly what it returns.\n"
@@ -200,7 +215,7 @@ class SystemPromptBuilder extends Component
             . "- Updates (updateEntry) are saved directly. Craft keeps a revision for rollback.\n"
             . "- After completing changes, give a concise summary of what changed.";
 
-        // 14. Response format reinforcement (at the end for recency bias)
+        // 15. Response format reinforcement (at the end for recency bias)
         $sections[] = "## Response Format Reminder\n"
             . "Start every response with the result or the question — never with what you are about to do. "
             . "No preamble, no narration, no filler. "

@@ -96,6 +96,26 @@ class UpdateEntryTool implements ToolInterface
         }
 
         $entry = $query->one();
+
+        // Entry not found on target site — try to propagate it there
+        if (!$entry && $siteHandle) {
+            $site = Craft::$app->getSites()->getSiteByHandle($siteHandle);
+            if ($site) {
+                $sourceEntry = Entry::find()->id($entryId)->status(null)->drafts(null)->site('*')->one();
+                if ($sourceEntry) {
+                    try {
+                        Craft::$app->getElements()->propagateElement($sourceEntry, $site->id);
+                        $entry = Entry::find()->id($entryId)->status(null)->drafts(null)->siteId($site->id)->one();
+                    } catch (\Throwable $e) {
+                        return [
+                            'error' => "Entry #{$entryId} could not be propagated to site \"{$siteHandle}\": {$e->getMessage()}",
+                            'retryHint' => null,
+                        ];
+                    }
+                }
+            }
+        }
+
         if (!$entry) {
             return [
                 'error' => "Entry #{$entryId} not found.",
