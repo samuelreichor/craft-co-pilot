@@ -469,7 +469,9 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         }
 
         $newEntries = [];
+        $existingEntries = [];
         $newSortOrder = [];
+        $existingUpdateIds = [];
         $newIndex = 1;
 
         foreach (array_values($value) as $block) {
@@ -477,20 +479,29 @@ class ComplexFieldTransformer implements FieldTransformerInterface
                 continue;
             }
 
+            // Blocks with _blockId reference existing entries — update them in place
+            $blockId = $block['_blockId'] ?? null;
             $block = $this->normalizeMatrixBlock($block, $matrixField);
-            $key = 'new' . $newIndex++;
-            $newSortOrder[] = $key;
-            $newEntries[$key] = $block;
+
+            if ($blockId !== null) {
+                $key = (string) $blockId;
+                $existingUpdateIds[] = $key;
+                $existingEntries[$key] = $block;
+            } else {
+                $key = 'new' . $newIndex++;
+                $newSortOrder[] = $key;
+                $newEntries[$key] = $block;
+            }
         }
 
         if ($replaceMode || $entry === null) {
             return [
-                'entries' => $newEntries,
-                'sortOrder' => $newSortOrder,
+                'entries' => array_merge($existingEntries, $newEntries),
+                'sortOrder' => array_merge($existingUpdateIds, $newSortOrder),
             ];
         }
 
-        return $this->mergeWithExistingBlocks($entry, $fieldHandle, $newEntries, $newSortOrder);
+        return $this->mergeWithExistingBlocks($entry, $fieldHandle, $newEntries, $newSortOrder, $existingEntries, $existingUpdateIds);
     }
 
     /**
@@ -628,6 +639,8 @@ class ComplexFieldTransformer implements FieldTransformerInterface
     /**
      * @param array<string, mixed> $newEntries
      * @param array<string> $newSortOrder
+     * @param array<string, mixed> $existingEntries Blocks with _blockId that should update in place
+     * @param array<string> $existingUpdateIds IDs of blocks being updated
      * @return array<string, mixed>
      */
     private function mergeWithExistingBlocks(
@@ -635,6 +648,8 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         string $fieldHandle,
         array $newEntries,
         array $newSortOrder,
+        array $existingEntries = [],
+        array $existingUpdateIds = [],
     ): array {
         $sortOrder = [];
 
@@ -649,7 +664,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
             $sortOrder[] = $blockId;
         }
 
-        $entries = [];
+        $entries = $existingEntries;
         foreach ($newSortOrder as $key) {
             $sortOrder[] = $key;
             $entries[$key] = $newEntries[$key];

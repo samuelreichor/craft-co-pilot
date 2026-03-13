@@ -9,3 +9,4 @@
 /evals/output/
 .promptfoo/
 test-results
+copilot-debug-*.json
