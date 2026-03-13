@@ -351,6 +351,10 @@ class ChatController extends Controller
         $this->requirePostRequest();
         $this->requirePermission(Constants::PERMISSION_CREATE_CHAT);
 
+        // Ensure the script completes even if the client disconnects mid-stream,
+        // so that persistConversation() is always reached.
+        ignore_user_abort(true);
+
         header('Content-Type: text/event-stream');
         header('Cache-Control: no-cache');
         header('Connection: keep-alive');
