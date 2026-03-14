@@ -225,6 +225,20 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
             ];
         }
 
+        // Prevent direct updates to nested Matrix block entries, they must be
+        // updated via their parent entry's Matrix field.
+        if ($entry->getOwnerId() !== null) {
+            $ownerId = $entry->getOwnerId();
+            $fieldHandle = $entry->fieldId
+                ? (Craft::$app->getFields()->getFieldById($entry->fieldId)?->handle ?? 'unknown')
+                : 'unknown';
+
+            return [
+                'error' => "Entry #{$entryId} is a nested Matrix block owned by entry #{$ownerId}. You cannot update it directly.",
+                'retryHint' => "Update the parent entry #{$ownerId} instead. To modify this block, pass the block data with \"_blockId\": {$entryId} inside the \"{$fieldHandle}\" Matrix field of entry #{$ownerId}.",
+            ];
+        }
+
         return $entry;
     }
 
@@ -372,6 +386,13 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
             return;
         }
 
+        // ContentBlock fields are not ElementQuery but ContentBlock elements
+        if ($fieldValue instanceof \craft\elements\ContentBlock) {
+            $this->fixContentBlockAddressSiteIds($fieldValue, $primarySiteId);
+
+            return;
+        }
+
         if (!$fieldValue instanceof \craft\elements\db\ElementQuery) {
             return;
         }
@@ -394,6 +415,39 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
     }
 
     /**
+     * Fixes Address siteIds inside ContentBlock sub-fields.
+     */
+    private function fixContentBlockAddressSiteIds(\craft\elements\ContentBlock $contentBlock, int $primarySiteId): void
+    {
+        $fieldLayout = $contentBlock->getFieldLayout();
+
+        foreach ($fieldLayout->getCustomFields() as $field) {
+            try {
+                $value = $contentBlock->getFieldValue($field->handle);
+            } catch (\Throwable) {
+                continue;
+            }
+
+            if ($value instanceof \craft\elements\db\ElementQuery) {
+                $cached = $value->getCachedResult();
+                if ($cached === null) {
+                    continue;
+                }
+
+                foreach ($cached as $nested) {
+                    if ($nested instanceof \craft\elements\Address && !$nested->id) {
+                        $nested->siteId = $primarySiteId;
+                    }
+
+                    if ($nested instanceof Entry) {
+                        $this->fixAddressSiteIdsRecursive($nested, $primarySiteId);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Recursively fixes Address siteIds inside nested Entry elements (Matrix blocks).
      */
     private function fixAddressSiteIdsRecursive(Entry $block, int $primarySiteId): void
@@ -404,6 +458,13 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
             try {
                 $value = $block->getFieldValue($field->handle);
             } catch (\Throwable) {
+                continue;
+            }
+
+            // Also handle ContentBlock sub-fields within Matrix blocks
+            if ($value instanceof \craft\elements\ContentBlock) {
+                $this->fixContentBlockAddressSiteIds($value, $primarySiteId);
+
                 continue;
             }
 

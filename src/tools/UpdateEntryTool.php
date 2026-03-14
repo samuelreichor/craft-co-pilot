@@ -11,7 +11,7 @@ class UpdateEntryTool extends AbstractEntryUpdateTool
 
     public function getDescription(): string
     {
-        return 'Updates one or more fields of an existing entry in a single save (one revision). Can also change entry status: set "enabled" (true/false), "postDate" (ISO 8601), or "expiryDate" (ISO 8601 or null) inside the fields object. For Matrix fields: by default new blocks are appended. To replace all blocks use {"_replace": true, "blocks": [...]}. To clear all blocks use []. To update a single Matrix block field, pass the block\'s _blockId as entryId.';
+        return 'Updates one or more fields of an existing entry in a single save (one revision). Can also change entry status: set "enabled" (true/false), "postDate" (ISO 8601), or "expiryDate" (ISO 8601 or null) inside the fields object. For Matrix fields: by default new blocks are appended. To replace all blocks use {"_replace": true, "blocks": [...]}. To clear all blocks use []. To update an existing block in-place, include "_blockId" in the block object. Never pass a Matrix block ID as entryId — always update blocks via the parent entry\'s Matrix field.';
     }
 
     public function getParameters(): array

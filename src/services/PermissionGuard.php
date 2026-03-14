@@ -48,6 +48,10 @@ class PermissionGuard extends Component
         }
 
         $section = $rootEntry->getSection();
+        if (!$section) {
+            return $this->denied("Entry #{$entryId} does not belong to any section.");
+        }
+
         $settings = CoPilot::getInstance()->getSettings();
         $access = $settings->getSectionAccessLevel($section->uid);
 
@@ -141,6 +145,7 @@ class PermissionGuard extends Component
         while ($current->primaryOwnerId !== null) {
             $owner = Entry::find()
                 ->id($current->primaryOwnerId)
+                ->site('*')
                 ->status(null)
                 ->drafts(null)
                 ->one();
@@ -178,6 +183,10 @@ class PermissionGuard extends Component
         }
 
         $section = $entry->getSection();
+        if (!$section) {
+            return $this->denied('Entry does not belong to any section.');
+        }
+
         $access = $settings->getSectionAccessLevel($section->uid);
 
         if ($access === SectionAccess::Blocked) {

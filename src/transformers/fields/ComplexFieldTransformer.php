@@ -71,7 +71,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         return match (true) {
             $field instanceof ContentBlockField && $value === null => $this->buildEmptyContentBlockFields($field),
             $field instanceof ContentBlockField && is_array($value) && empty($value) => $this->buildEmptyContentBlockFields($field),
-            $field instanceof ContentBlockField && is_array($value) => $this->normalizeContentBlockValue($value),
+            $field instanceof ContentBlockField && is_array($value) => $this->normalizeContentBlockValue($value, $field, $entry),
             $field instanceof LinkField && (is_int($value) || (is_string($value) && ctype_digit($value))) => $this->normalizeLinkValue(['type' => 'entry', 'value' => (int) $value], $entry),
             $field instanceof LinkField && is_array($value) => $this->normalizeLinkValue($value, $entry),
             $field instanceof MoneyField && is_array($value) && isset($value['amount']) => (int) $value['amount'],
@@ -305,18 +305,56 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @param array<string, mixed> $value
      * @return array<string, mixed>
      */
-    private function normalizeContentBlockValue(array $value): array
+    private function normalizeContentBlockValue(array $value, ContentBlockField $contentBlockField, ?Entry $entry = null): array
     {
         if (isset($value['fields']) && is_array($value['fields'])) {
             unset($value['fields']['title'], $value['fields']['slug']);
+            $value['fields'] = $this->normalizeContentBlockSubFields($value['fields'], $contentBlockField, $entry);
 
             return $value;
         }
 
         $nativeAttributes = ['title', 'slug'];
         $fields = array_diff_key($value, array_flip($nativeAttributes));
+        $fields = $this->normalizeContentBlockSubFields($fields, $contentBlockField, $entry);
 
         return ['fields' => $fields];
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     * @return array<string, mixed>
+     */
+    private function normalizeContentBlockSubFields(array $fields, ContentBlockField $contentBlockField, ?Entry $entry = null): array
+    {
+        $fieldLayout = $contentBlockField->getFieldLayout();
+        $registry = CoPilot::getInstance()->transformerRegistry;
+
+        foreach ($fields as $handle => $value) {
+            if (!is_array($value)) {
+                continue;
+            }
+
+            $field = $fieldLayout->getFieldByHandle($handle);
+
+            if ($field === null) {
+                continue;
+            }
+
+            $transformer = $registry->getTransformerForField($field);
+
+            if ($transformer === null) {
+                continue;
+            }
+
+            $normalized = $transformer->normalizeValue($field, $value, $entry);
+
+            if ($normalized !== null) {
+                $fields[$handle] = $normalized;
+            }
+        }
+
+        return $fields;
     }
 
     /**
@@ -481,7 +519,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
 
             // Blocks with _blockId reference existing entries — update them in place
             $blockId = $block['_blockId'] ?? null;
-            $block = $this->normalizeMatrixBlock($block, $matrixField);
+            $block = $this->normalizeMatrixBlock($block, $matrixField, $entry);
 
             if ($blockId !== null) {
                 $key = (string) $blockId;
@@ -513,7 +551,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @param array<string, mixed> $block
      * @return array<string, mixed>
      */
-    private function normalizeMatrixBlock(array $block, ?MatrixField $matrixField = null): array
+    private function normalizeMatrixBlock(array $block, ?MatrixField $matrixField = null, ?Entry $entry = null): array
     {
         if (!isset($block['type']) && isset($block['_blockType'])) {
             $block['type'] = $block['_blockType'];
@@ -544,7 +582,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
             }
 
             if ($matrixField !== null && isset($block['type'])) {
-                $block['fields'] = $this->normalizeBlockSubFields($block['fields'], $matrixField, $block['type']);
+                $block['fields'] = $this->normalizeBlockSubFields($block['fields'], $matrixField, $block['type'], $entry);
             } else {
                 $block['fields'] = $this->normalizeNestedFieldsByPattern($block['fields']);
             }
@@ -557,7 +595,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @param array<string, mixed> $fields
      * @return array<string, mixed>
      */
-    private function normalizeBlockSubFields(array $fields, MatrixField $matrixField, string $blockTypeHandle): array
+    private function normalizeBlockSubFields(array $fields, MatrixField $matrixField, string $blockTypeHandle, ?Entry $entry = null): array
     {
         $fieldLayout = $this->resolveBlockFieldLayout($matrixField, $blockTypeHandle);
 
@@ -584,7 +622,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
                 continue;
             }
 
-            $normalized = $transformer->normalizeValue($field, $value);
+            $normalized = $transformer->normalizeValue($field, $value, $entry);
 
             if ($normalized !== null) {
                 $fields[$handle] = $normalized;
