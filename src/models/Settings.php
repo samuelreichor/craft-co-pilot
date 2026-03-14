@@ -16,9 +16,9 @@ class Settings extends Model
 {
     // Provider settings
     public string $defaultProvider = 'openai';
-    public string $openaiModel = 'gpt-4.1';
-    public string $anthropicModel = 'claude-sonnet-4-6';
-    public string $geminiModel = 'gemini-2.5-flash';
+    public string $openaiModel = 'gpt-5.1';
+    public string $anthropicModel = 'claude-opus-4-6';
+    public string $geminiModel = 'gemini-3.1-pro-preview';
 
     // Environment variable names for API keys
     public string $openaiApiKeyEnvVar = '';
@@ -63,7 +63,7 @@ class Settings extends Model
 
     // Agent behavior
     public string $agentExecutionMode = 'supervised';
-    public int $maxAgentIterations = 10;
+    public int $maxAgentIterations = 20;
     public int $defaultSerializationDepth = 3;
     public int $maxSerializationDepth = 4;
     public int $maxContextTokens = 32000;
