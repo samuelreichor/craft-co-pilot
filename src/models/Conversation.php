@@ -18,6 +18,8 @@ class Conversation
     /** @var array<int, array<string, mixed>> */
     public array $debugLog = [];
 
+    public ?string $lastSystemPrompt = null;
+
     public function __construct(
         int $userId,
         string $title = 'New conversation',
@@ -41,11 +43,12 @@ class Conversation
      */
     public function addDebugTurn(array $debugData, int $inputTokens, int $outputTokens): void
     {
+        $this->lastSystemPrompt = $debugData['systemPrompt'] ?? null;
+
         $this->debugLog[] = [
             'timestamp' => (new \DateTimeImmutable())->format('c'),
             'model' => $debugData['model'] ?? null,
             'provider' => $debugData['provider'] ?? null,
-            'systemPrompt' => $debugData['systemPrompt'] ?? null,
             'tokens' => ['input' => $inputTokens, 'output' => $outputTokens],
             'iterations' => $debugData['iterations'] ?? null,
             'messages' => $debugData['messages'] ?? [],
@@ -55,6 +58,17 @@ class Conversation
     public function addMessage(Message $message): void
     {
         $this->messages[] = $message;
+    }
+
+    /**
+     * Replace all messages with the given array and clear the debug log.
+     *
+     * @param Message[] $messages
+     */
+    public function replaceMessages(array $messages): void
+    {
+        $this->messages = $messages;
+        $this->debugLog = [];
     }
 
     /**

@@ -22,7 +22,10 @@ class ConversationService extends Component
         $tableSchema = Craft::$app->getDb()->getSchema()->getTableSchema(Constants::TABLE_CONVERSATIONS);
         $messagesDbType = $tableSchema->columns['messages']->dbType ?? null;
         $messages = Db::prepareValueForDb($conversation->getMessagesArray(), $messagesDbType);
-        $debugLog = !empty($conversation->debugLog) ? json_encode($conversation->debugLog) : null;
+        $debugLog = !empty($conversation->debugLog) ? json_encode([
+            'systemPrompt' => $conversation->lastSystemPrompt,
+            'turns' => $conversation->debugLog,
+        ]) : null;
 
         if ($conversation->id) {
             Craft::$app->getDb()->createCommand()->update(
@@ -197,7 +200,8 @@ class ConversationService extends Component
         }
 
         $debugLog = json_decode($row['debugLog'] ?? '[]', true);
-        $conversation->debugLog = is_array($debugLog) ? $debugLog : [];
+        $conversation->debugLog = $debugLog['turns'] ?? [];
+        $conversation->lastSystemPrompt = $debugLog['systemPrompt'] ?? null;
 
         return $conversation;
     }

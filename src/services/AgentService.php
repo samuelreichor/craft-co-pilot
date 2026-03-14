@@ -114,7 +114,7 @@ class AgentService extends Component
                     'newMessages' => array_slice($messages, $historyCount),
                     'inputTokens' => $totalInputTokens,
                     'outputTokens' => $totalOutputTokens,
-                    'debug' => $this->buildDebugPayload($systemPrompt, $model, $settings, $messages, $iteration),
+                    'debug' => $this->buildDebugPayload($systemPrompt, $model, $settings, $messages, $iteration, $historyCount),
                 ];
             }
 
@@ -138,7 +138,7 @@ class AgentService extends Component
                     'newMessages' => array_slice($messages, $historyCount),
                     'inputTokens' => $totalInputTokens,
                     'outputTokens' => $totalOutputTokens,
-                    'debug' => $this->buildDebugPayload($systemPrompt, $model, $settings, $messages, $iteration),
+                    'debug' => $this->buildDebugPayload($systemPrompt, $model, $settings, $messages, $iteration, $historyCount),
                 ];
             }
 
@@ -184,7 +184,7 @@ class AgentService extends Component
             'newMessages' => array_slice($messages, $historyCount),
             'inputTokens' => $totalInputTokens,
             'outputTokens' => $totalOutputTokens,
-            'debug' => $this->buildDebugPayload($systemPrompt, $model, $settings, $messages, $iteration),
+            'debug' => $this->buildDebugPayload($systemPrompt, $model, $settings, $messages, $iteration, $historyCount),
         ];
     }
 
@@ -382,7 +382,7 @@ class AgentService extends Component
             'newMessages' => array_slice($messages, $historyCount),
             'inputTokens' => $totalInputTokens,
             'outputTokens' => $totalOutputTokens,
-            'debug' => $this->buildDebugPayload($systemPrompt, $model, $settings, $messages, $iteration),
+            'debug' => $this->buildDebugPayload($systemPrompt, $model, $settings, $messages, $iteration, $historyCount),
         ];
     }
 
@@ -522,6 +522,7 @@ class AgentService extends Component
         Settings $settings,
         array $messages,
         int $iterations,
+        int $historyCount,
     ): array {
         $modelProperty = $settings->defaultProvider . 'Model';
 
@@ -529,7 +530,7 @@ class AgentService extends Component
             'systemPrompt' => $systemPrompt,
             'model' => $model ?? $settings->$modelProperty ?? null,
             'provider' => $settings->defaultProvider,
-            'messages' => $messages,
+            'messages' => array_values(array_slice($messages, $historyCount)),
             'iterations' => $iterations,
         ];
     }
