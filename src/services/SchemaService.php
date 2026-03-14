@@ -262,11 +262,18 @@ class SchemaService extends Component
         $fieldLayout = $entryType->getFieldLayout();
         $fields = array_merge($fields, $this->describeFieldLayoutFields($fieldLayout));
 
-        return [
+        $info = [
             'handle' => $entryType->handle,
             'name' => $entryType->name,
-            'fields' => $fields,
         ];
+
+        if ($entryType->description) {
+            $info['description'] = $entryType->description;
+        }
+
+        $info['fields'] = $fields;
+
+        return $info;
     }
 
     /**
@@ -298,11 +305,18 @@ class SchemaService extends Component
         $fieldLayout = $entryType->getFieldLayout();
         $fields = array_merge($fields, $this->describeFieldLayoutFieldsSlim($fieldLayout));
 
-        return [
+        $info = [
             'handle' => $entryType->handle,
             'name' => $entryType->name,
-            'fields' => $fields,
         ];
+
+        if ($entryType->description) {
+            $info['description'] = $entryType->description;
+        }
+
+        $info['fields'] = $fields;
+
+        return $info;
     }
 
     /**
@@ -390,6 +404,10 @@ class SchemaService extends Component
             $fieldInfo['maxLength'] = $field->charLimit;
         }
 
+        if (property_exists($field, 'instructions') && $field->instructions) {
+            $fieldInfo['instructions'] = $field->instructions;
+        }
+
         $fieldInfo = $this->describeFieldMetadata($field, $fieldInfo);
 
         if ($field instanceof ContentBlockField) {
@@ -433,11 +451,18 @@ class SchemaService extends Component
             $fieldLayout = $entryType->getFieldLayout();
             $blockFields = array_merge($blockFields, $this->describeFieldLayoutFields($fieldLayout));
 
-            $blockTypes[] = [
+            $blockType = [
                 'handle' => $entryType->handle,
                 'name' => $entryType->name,
-                'fields' => $blockFields,
             ];
+
+            if ($entryType->description) {
+                $blockType['description'] = $entryType->description;
+            }
+
+            $blockType['fields'] = $blockFields;
+
+            $blockTypes[] = $blockType;
         }
 
         return $blockTypes;
