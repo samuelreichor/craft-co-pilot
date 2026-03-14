@@ -1,0 +1,49 @@
+name: Bug Report
+description: Create a bug report for this plugin.
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to submit a bug report! To ensure this hasn't already been reported, please first search [existing issues](https://github.com/samuelreichor/craft-coPilot/issues?q=is%3Aissue).
+  - type: textarea
+    id: body
+    attributes:
+      label: Bug Report
+      description: Please provide a clear and concise description of the bug, including steps to reproduce and screenshots if applicable.
+      value: |
+        **What happened:**
+
+        **What I expected:**
+
+        **Steps to reproduce:**
+        1.
+    validations:
+      required: true
+  - type: input
+    id: craft-version
+    attributes:
+      label: Craft Version
+      placeholder: e.g. 5.7.0
+    validations:
+      required: true
+  - type: input
+    id: copilot-version
+    attributes:
+      label: CoPilot Version
+      placeholder: e.g. 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: php-version
+    attributes:
+      label: PHP Version
+      placeholder: e.g. 8.2.0
+    validations:
+      required: true
+  - type: textarea
+    id: debug-log
+    attributes:
+      label: Debug Log
+      description: This field is auto-filled when using the `/send-debug-log` command in the chat.
