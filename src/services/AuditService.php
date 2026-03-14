@@ -171,7 +171,7 @@ class AuditService extends Component
     {
         return match ($toolName) {
             'readEntry', 'readEntries', 'readAsset', 'listSections', 'describeSection', 'describeEntryType' => 'read',
-            'updateField', 'updateEntry' => 'update',
+            'updateField', 'updateEntry', 'publishEntry' => 'update',
             'createEntry' => 'create',
             'searchEntries', 'searchAssets', 'searchUsers', 'searchTags' => 'search',
             default => 'unknown',
