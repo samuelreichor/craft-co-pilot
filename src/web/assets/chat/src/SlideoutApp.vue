@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import { apiPost } from './composables/useCraftApi';
 import { useDebugExport } from './composables/useDebugExport';
 import { useCommandHandler } from './composables/useCommandHandler';
+import { parseAttachmentsFromContent } from './utils/attachments';
 import type { ConversationSummary, UIMessage } from './types';
 import ChatPanel from './components/ChatPanel.vue';
 
@@ -63,19 +64,30 @@ async function loadConversation(id: number) {
       chatPanel.value?.setMessages(
         (data.messages || [])
           .filter((m) => m.role === 'user' || m.role === 'assistant')
-          .map(
-            (m) =>
-              ({
-                role: m.role as 'user' | 'assistant',
-                content:
-                  typeof m.content === 'string'
-                    ? m.content
-                    : JSON.stringify(m.content),
+          .map((m) => {
+            const raw =
+              typeof m.content === 'string'
+                ? m.content
+                : JSON.stringify(m.content);
+            if (m.role === 'user') {
+              const parsed = parseAttachmentsFromContent(raw);
+              return {
+                role: 'user' as const,
+                content: parsed.content,
+                attachments: parsed.attachments,
                 toolCalls: null,
                 inputTokens: 0,
                 outputTokens: 0,
-              }) as UIMessage,
-          ),
+              };
+            }
+            return {
+              role: 'assistant' as const,
+              content: raw,
+              toolCalls: null,
+              inputTokens: 0,
+              outputTokens: 0,
+            };
+          }),
       );
     }
   } catch (err) {

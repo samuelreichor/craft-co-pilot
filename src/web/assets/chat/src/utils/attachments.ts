@@ -23,12 +23,19 @@ export function parseAttachmentsFromContent(content: string): {
       id: parseInt(match[3], 10),
     });
   }
-  const stripped = content.replace(
+  let stripped = content.replace(
     /(\[(Entry|Asset):\s+.+?\s+\(ID:\s+\d+\)\]\s*)+\n?/,
     '',
   );
+
+  // Strip backend-injected context blocks (--- Attached Entry/Asset/File ... ---)
+  stripped = stripped.replace(
+    /\n*--- Attached (?:Entry|Asset|File)[^\n]*---\n[\s\S]*?---\n*/g,
+    '',
+  );
+
   return {
-    content: stripped,
+    content: stripped.trim(),
     attachments: attachments.length > 0 ? attachments : null,
   };
 }

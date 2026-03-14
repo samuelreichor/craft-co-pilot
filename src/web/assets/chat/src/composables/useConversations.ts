@@ -61,14 +61,28 @@ export function useConversations(
 
     const messages: UIMessage[] = (data.messages || [])
       .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content:
-          typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-        toolCalls: m.role === 'assistant' ? (m.toolCalls ?? null) : null,
-        inputTokens: 0,
-        outputTokens: 0,
-      }));
+      .map((m) => {
+        const raw =
+          typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+        if (m.role === 'user') {
+          const parsed = parseAttachmentsFromContent(raw);
+          return {
+            role: 'user' as const,
+            content: parsed.content,
+            attachments: parsed.attachments,
+            toolCalls: null,
+            inputTokens: 0,
+            outputTokens: 0,
+          };
+        }
+        return {
+          role: 'assistant' as const,
+          content: raw,
+          toolCalls: m.toolCalls ?? null,
+          inputTokens: 0,
+          outputTokens: 0,
+        };
+      });
 
     return { conversationId: data.id, messages };
   }
