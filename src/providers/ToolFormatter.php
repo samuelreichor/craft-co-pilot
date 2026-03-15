@@ -2,27 +2,33 @@
 
 namespace samuelreichor\coPilot\providers;
 
+use samuelreichor\coPilot\CoPilot;
+
 /**
  * Normalizes tool definitions to provider-specific formats.
  */
 class ToolFormatter
 {
     /**
-     * Converts internal tool format to OpenAI function calling format.
+     * Converts internal tool format to OpenAI Responses API format.
      *
      * @param array<int, array<string, mixed>> $tools
      * @return array<int, array<string, mixed>>
      */
     public static function forOpenAI(array $tools): array
     {
-        return array_map(fn(array $tool) => [
+        $formatted = array_map(fn(array $tool) => [
             'type' => 'function',
-            'function' => [
-                'name' => $tool['name'],
-                'description' => $tool['description'],
-                'parameters' => $tool['parameters'],
-            ],
+            'name' => $tool['name'],
+            'description' => $tool['description'],
+            'parameters' => $tool['parameters'],
         ], $tools);
+
+        if (CoPilot::getInstance()->getSettings()->webSearchEnabled) {
+            $formatted[] = ['type' => 'web_search'];
+        }
+
+        return $formatted;
     }
 
     /**

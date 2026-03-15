@@ -51,7 +51,7 @@
 
     {{ forms.lightswitchField({
         label: 'Enable Web Search',
-        instructions: "Allow the AI to search the web. Uses Anthropic's built-in web search (Brave Search). Additional costs apply. Only available for Anthropic.",
+        instructions: "Allow the AI to search the web. Uses the provider's built-in web search (OpenAI: Web Search, Anthropic: Brave Search). Additional costs may apply. Not available for Gemini.",
         id: 'webSearchEnabled',
         name: 'webSearchEnabled',
         on: settings.webSearchEnabled,

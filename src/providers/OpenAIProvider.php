@@ -12,7 +12,7 @@ use samuelreichor\coPilot\models\StreamChunk;
 
 class OpenAIProvider implements ProviderInterface
 {
-    private const API_URL = 'https://api.openai.com/v1/chat/completions';
+    private const API_URL = 'https://api.openai.com/v1/responses';
 
     public function chat(
         string $systemPrompt,
@@ -31,7 +31,9 @@ class OpenAIProvider implements ProviderInterface
 
         $payload = [
             'model' => $model,
-            'messages' => $this->formatMessages($systemPrompt, $messages),
+            'instructions' => $systemPrompt,
+            'input' => $this->formatInput($messages),
+            'store' => false,
         ];
 
         $formattedTools = ToolFormatter::forOpenAI($tools);
@@ -63,9 +65,10 @@ class OpenAIProvider implements ProviderInterface
 
         $payload = [
             'model' => $model,
-            'messages' => $this->formatMessages($systemPrompt, $messages),
+            'instructions' => $systemPrompt,
+            'input' => $this->formatInput($messages),
             'stream' => true,
-            'stream_options' => ['include_usage' => true],
+            'store' => false,
         ];
 
         $formattedTools = ToolFormatter::forOpenAI($tools);
@@ -125,43 +128,46 @@ class OpenAIProvider implements ProviderInterface
      * @param array<int, array<string, mixed>> $messages
      * @return array<int, array<string, mixed>>
      */
-    private function formatMessages(string $systemPrompt, array $messages): array
+    private function formatInput(array $messages): array
     {
-        $formatted = [
-            ['role' => 'system', 'content' => $systemPrompt],
-        ];
+        $input = [];
 
         foreach ($messages as $message) {
             $role = $message['role'];
 
             if ($role === 'tool') {
-                $formatted[] = [
-                    'role' => 'tool',
-                    'tool_call_id' => $message['toolCallId'],
-                    'content' => is_array($message['content'])
-                        ? json_encode($message['content'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
-                        : $message['content'],
+                $content = is_array($message['content'])
+                    ? json_encode($message['content'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                    : $message['content'];
+
+                $input[] = [
+                    'type' => 'function_call_output',
+                    'call_id' => $message['toolCallId'],
+                    'output' => (string)$content,
                 ];
                 continue;
             }
 
             if ($role === 'assistant' && !empty($message['toolCalls'])) {
-                $formatted[] = [
-                    'role' => 'assistant',
-                    'content' => $message['content'] ?? null,
-                    'tool_calls' => array_map(fn(array $tc) => [
-                        'id' => $tc['id'],
-                        'type' => 'function',
-                        'function' => [
-                            'name' => $tc['name'],
-                            'arguments' => json_encode($tc['arguments'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-                        ],
-                    ], $message['toolCalls']),
-                ];
+                if (!empty($message['content'])) {
+                    $input[] = [
+                        'role' => 'assistant',
+                        'content' => $message['content'],
+                    ];
+                }
+
+                foreach ($message['toolCalls'] as $tc) {
+                    $input[] = [
+                        'type' => 'function_call',
+                        'call_id' => $tc['id'],
+                        'name' => $tc['name'],
+                        'arguments' => json_encode($tc['arguments'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                    ];
+                }
                 continue;
             }
 
-            $formatted[] = [
+            $input[] = [
                 'role' => $role,
                 'content' => is_array($message['content'])
                     ? json_encode($message['content'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
@@ -169,7 +175,7 @@ class OpenAIProvider implements ProviderInterface
             ];
         }
 
-        return $formatted;
+        return $input;
     }
 
     private function sendRequest(string $apiKey, array $payload): AIResponse
@@ -201,35 +207,44 @@ class OpenAIProvider implements ProviderInterface
      */
     private function parseResponse(array $data): AIResponse
     {
-        $inputTokens = $data['usage']['prompt_tokens'] ?? 0;
-        $outputTokens = $data['usage']['completion_tokens'] ?? 0;
-        $choice = $data['choices'][0] ?? null;
+        $inputTokens = $data['usage']['input_tokens'] ?? 0;
+        $outputTokens = $data['usage']['output_tokens'] ?? 0;
+        $status = $data['status'] ?? 'unknown';
 
-        if (!$choice) {
-            return AIResponse::error('No response from OpenAI.', $inputTokens, $outputTokens);
+        $text = null;
+        $toolCalls = [];
+
+        foreach ($data['output'] ?? [] as $item) {
+            if ($item['type'] === 'message') {
+                foreach ($item['content'] ?? [] as $content) {
+                    if ($content['type'] === 'output_text') {
+                        $text = ($text ?? '') . $content['text'];
+                    }
+                }
+            }
+
+            if ($item['type'] === 'function_call') {
+                $toolCalls[] = [
+                    'id' => $item['call_id'],
+                    'name' => $item['name'],
+                    'arguments' => json_decode(self::fixBrokenUnicodeEscapes($item['arguments']), true) ?? [],
+                ];
+            }
         }
 
-        $message = $choice['message'];
-        $type = !empty($message['tool_calls']) ? 'tool_call' : 'text';
-        $finishReason = $choice['finish_reason'] ?? 'unknown';
+        $type = !empty($toolCalls) ? 'tool_call' : 'text';
 
-        Logger::info("OpenAI API response: type={$type}, finish_reason={$finishReason}, inputTokens={$inputTokens}, outputTokens={$outputTokens}");
+        Logger::info("OpenAI API response: type={$type}, status={$status}, inputTokens={$inputTokens}, outputTokens={$outputTokens}");
 
-        if (empty($message['content']) && empty($message['tool_calls'])) {
-            Logger::warning('OpenAI API returned empty response: finish_reason=' . $finishReason);
+        if ($text === null && empty($toolCalls)) {
+            Logger::warning('OpenAI API returned empty response: status=' . $status);
         }
 
-        if (!empty($message['tool_calls'])) {
-            $toolCalls = array_map(fn(array $tc) => [
-                'id' => $tc['id'],
-                'name' => $tc['function']['name'],
-                'arguments' => json_decode(self::fixBrokenUnicodeEscapes($tc['function']['arguments']), true) ?? [],
-            ], $message['tool_calls']);
-
-            return AIResponse::toolCall($toolCalls, $message['content'] ?? null, $inputTokens, $outputTokens);
+        if (!empty($toolCalls)) {
+            return AIResponse::toolCall($toolCalls, $text, $inputTokens, $outputTokens);
         }
 
-        return AIResponse::text($message['content'] ?? '', $inputTokens, $outputTokens);
+        return AIResponse::text($text ?? '', $inputTokens, $outputTokens);
     }
 
     /**
@@ -239,16 +254,22 @@ class OpenAIProvider implements ProviderInterface
     {
         $client = HttpClientFactory::create();
         $buffer = '';
-        /** @var array<int, array{id: string, name: string, arguments: string}> $toolCalls */
+        /** @var array<string, array{id: string, name: string, arguments: string}> $toolCalls */
         $toolCalls = [];
         $hasTextContent = false;
-        $finishReason = 'unknown';
+        $status = 'unknown';
         $chunksProcessed = 0;
+        $currentEventType = '';
 
-        // Shared line processor for both streaming and buffer flush
-        $processLine = function(string $line) use (&$toolCalls, &$hasTextContent, &$finishReason, &$chunksProcessed, $onChunk): void {
+        $processLine = function(string $line) use (&$toolCalls, &$hasTextContent, &$status, &$chunksProcessed, &$currentEventType, $onChunk): void {
             $line = trim($line);
-            if ($line === '' || $line === 'data: [DONE]') {
+
+            if ($line === '') {
+                return;
+            }
+
+            if (str_starts_with($line, 'event: ')) {
+                $currentEventType = substr($line, 7);
                 return;
             }
 
@@ -263,17 +284,7 @@ class OpenAIProvider implements ProviderInterface
 
             $chunksProcessed++;
 
-            $chunkFinishReason = $json['choices'][0]['finish_reason'] ?? null;
-            if ($chunkFinishReason !== null) {
-                $finishReason = $chunkFinishReason;
-            }
-
-            $delta = $json['choices'][0]['delta'] ?? [];
-            if (isset($delta['content']) && $delta['content'] !== '') {
-                $hasTextContent = true;
-            }
-
-            $this->processStreamChunk($json, $toolCalls, $onChunk);
+            $this->processStreamEvent($currentEventType, $json, $toolCalls, $hasTextContent, $status, $onChunk);
         };
 
         try {
@@ -299,7 +310,6 @@ class OpenAIProvider implements ProviderInterface
                 ],
             ]);
 
-            // Flush any remaining buffer data
             if (trim($buffer) !== '') {
                 Logger::warning('OpenAI stream: flushing unparsed buffer remainder (' . strlen($buffer) . ' bytes)');
                 $processLine($buffer);
@@ -308,13 +318,12 @@ class OpenAIProvider implements ProviderInterface
 
             $hasText = $hasTextContent ? 'true' : 'false';
 
-            Logger::info("OpenAI stream complete: finish_reason={$finishReason}, hasText={$hasText}, toolCalls=" . count($toolCalls) . ", chunks={$chunksProcessed}");
+            Logger::info("OpenAI stream complete: status={$status}, hasText={$hasText}, toolCalls=" . count($toolCalls) . ", chunks={$chunksProcessed}");
 
             if (!$hasTextContent && empty($toolCalls)) {
-                Logger::warning("OpenAI stream returned no text and no tool calls: finish_reason={$finishReason}, chunks={$chunksProcessed}");
+                Logger::warning("OpenAI stream returned no text and no tool calls: status={$status}, chunks={$chunksProcessed}");
             }
 
-            // Emit accumulated tool calls after stream completes
             foreach ($toolCalls as $tc) {
                 $onChunk(new StreamChunk(
                     'tool_call',
@@ -331,42 +340,49 @@ class OpenAIProvider implements ProviderInterface
 
     /**
      * @param array<string, mixed> $json
-     * @param array<int, array{id: string, name: string, arguments: string}> &$toolCalls
+     * @param array<string, array{id: string, name: string, arguments: string}> &$toolCalls
      * @param callable(StreamChunk): void $onChunk
      */
-    private function processStreamChunk(array $json, array &$toolCalls, callable $onChunk): void
+    private function processStreamEvent(string $eventType, array $json, array &$toolCalls, bool &$hasTextContent, string &$status, callable $onChunk): void
     {
-        if (isset($json['usage'])) {
-            $onChunk(new StreamChunk(
-                'usage',
-                inputTokens: $json['usage']['prompt_tokens'] ?? 0,
-                outputTokens: $json['usage']['completion_tokens'] ?? 0,
-            ));
-        }
-
-        $delta = $json['choices'][0]['delta'] ?? null;
-        if (!$delta) {
-            return;
-        }
-
-        if (isset($delta['content']) && $delta['content'] !== '') {
-            $onChunk(new StreamChunk('text_delta', delta: $delta['content']));
-        }
-
-        if (isset($delta['tool_calls'])) {
-            foreach ($delta['tool_calls'] as $tcDelta) {
-                $index = $tcDelta['index'] ?? 0;
-
-                if (isset($tcDelta['id'])) {
-                    $toolCalls[$index] = [
-                        'id' => $tcDelta['id'],
-                        'name' => $tcDelta['function']['name'] ?? '',
-                        'arguments' => $tcDelta['function']['arguments'] ?? '',
-                    ];
-                } elseif (isset($toolCalls[$index])) {
-                    $toolCalls[$index]['arguments'] .= $tcDelta['function']['arguments'] ?? '';
+        switch ($eventType) {
+            case 'response.output_text.delta':
+                $delta = $json['delta'] ?? '';
+                if ($delta !== '') {
+                    $hasTextContent = true;
+                    $onChunk(new StreamChunk('text_delta', delta: $delta));
                 }
-            }
+                break;
+
+            case 'response.output_item.added':
+                if (($json['item']['type'] ?? '') === 'function_call') {
+                    $callId = $json['item']['call_id'] ?? '';
+                    $toolCalls[$callId] = [
+                        'id' => $callId,
+                        'name' => $json['item']['name'] ?? '',
+                        'arguments' => '',
+                    ];
+                }
+                break;
+
+            case 'response.function_call_arguments.delta':
+                $callId = $json['call_id'] ?? $json['item_id'] ?? '';
+                if (isset($toolCalls[$callId])) {
+                    $toolCalls[$callId]['arguments'] .= $json['delta'] ?? '';
+                }
+                break;
+
+            case 'response.completed':
+                $status = $json['response']['status'] ?? 'completed';
+                $usage = $json['response']['usage'] ?? [];
+                if (!empty($usage)) {
+                    $onChunk(new StreamChunk(
+                        'usage',
+                        inputTokens: $usage['input_tokens'] ?? 0,
+                        outputTokens: $usage['output_tokens'] ?? 0,
+                    ));
+                }
+                break;
         }
     }
 

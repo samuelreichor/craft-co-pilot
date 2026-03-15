@@ -40,8 +40,13 @@ class AnthropicProvider implements ProviderInterface
         $formattedTools = ToolFormatter::forAnthropic($tools);
         if ($settings->webSearchEnabled) {
             $formattedTools[] = [
-                'type' => 'web_search_20250305',
+                'type' => 'web_search_20260209',
                 'name' => 'web_search',
+                'max_uses' => 3,
+            ];
+            $formattedTools[] = [
+                'type' => 'web_fetch_20260209',
+                'name' => 'web_fetch',
                 'max_uses' => 3,
             ];
         }
@@ -84,8 +89,13 @@ class AnthropicProvider implements ProviderInterface
         $formattedTools = ToolFormatter::forAnthropic($tools);
         if ($settings->webSearchEnabled) {
             $formattedTools[] = [
-                'type' => 'web_search_20250305',
+                'type' => 'web_search_20260209',
                 'name' => 'web_search',
+                'max_uses' => 3,
+            ];
+            $formattedTools[] = [
+                'type' => 'web_fetch_20260209',
+                'name' => 'web_fetch',
                 'max_uses' => 3,
             ];
         }
