@@ -44,6 +44,7 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
             if (in_array($fieldHandle, $nativeFields, true)) {
                 if ($fieldHandle === 'enabled') {
                     $entry->enabled = (bool) $value;
+                    $entry->setEnabledForSite((bool) $value);
                     $value = (bool) $value;
                 } elseif ($fieldHandle === 'postDate' || $fieldHandle === 'expiryDate') {
                     $entry->{$fieldHandle} = $value !== null ? new \DateTime($value) : null;
@@ -318,6 +319,7 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
             if (in_array($fieldHandle, $nativeFields, true)) {
                 if ($fieldHandle === 'enabled') {
                     $target->enabled = (bool) $value;
+                    $target->setEnabledForSite((bool) $value);
                 } elseif ($fieldHandle === 'postDate' || $fieldHandle === 'expiryDate') {
                     $target->{$fieldHandle} = $value !== null ? new \DateTime($value) : null;
                 } else {
@@ -501,7 +503,7 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
         }
 
         if ($fieldHandle === 'enabled') {
-            return $entry->enabled;
+            return $entry->enabled && $entry->getEnabledForSite();
         }
 
         if ($fieldHandle === 'postDate') {
