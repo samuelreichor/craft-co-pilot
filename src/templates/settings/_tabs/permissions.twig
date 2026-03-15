@@ -1,7 +1,14 @@
 {% import '_includes/forms.twig' as forms %}
+{% from 'co-pilot/settings/_macros' import configWarning %}
 
     <h3>Section Access</h3>
     <p class="light">Configure which sections the AI can access. This works like GraphQL schema permissions.</p>
+
+    {% if config.sectionAccess is defined %}
+        <p class="warning with-icon">
+            {{ configWarning('sectionAccess') }}
+        </p>
+    {% endif %}
 
     {% set sections = craft.app.entries.allSections %}
 
@@ -27,19 +34,22 @@
                             <input type="radio"
                                    name="sectionAccess[{{ section.uid }}]"
                                    value="blocked"
-                                   {{ currentAccess == 'blocked' ? 'checked' }}>
+                                   {{ currentAccess == 'blocked' ? 'checked' }}
+                                   {{ config.sectionAccess is defined ? 'disabled' }}>
                         </td>
                         <td class="thin centeralign">
                             <input type="radio"
                                    name="sectionAccess[{{ section.uid }}]"
                                    value="readOnly"
-                                   {{ currentAccess == 'readOnly' ? 'checked' }}>
+                                   {{ currentAccess == 'readOnly' ? 'checked' }}
+                                   {{ config.sectionAccess is defined ? 'disabled' }}>
                         </td>
                         <td class="thin centeralign">
                             <input type="radio"
                                    name="sectionAccess[{{ section.uid }}]"
                                    value="readWrite"
-                                   {{ currentAccess == 'readWrite' ? 'checked' }}>
+                                   {{ currentAccess == 'readWrite' ? 'checked' }}
+                                   {{ config.sectionAccess is defined ? 'disabled' }}>
                         </td>
                     </tr>
                 {% endfor %}

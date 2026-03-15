@@ -1,4 +1,5 @@
 {% import '_includes/forms.twig' as forms %}
+{% from 'co-pilot/settings/_macros' import configWarning %}
 
     <h3>Agent</h3>
 
@@ -11,6 +12,8 @@
         type: 'number',
         min: 1,
         max: 50,
+        disabled: config.maxAgentIterations is defined,
+        warning: config.maxAgentIterations is defined ? configWarning('maxAgentIterations'),
         errors: settings.getErrors('maxAgentIterations'),
     }) }}
 
@@ -24,6 +27,8 @@
         min: 1000,
         max: 128000,
         step: 1000,
+        disabled: config.maxContextTokens is defined,
+        warning: config.maxContextTokens is defined ? configWarning('maxContextTokens'),
         errors: settings.getErrors('maxContextTokens'),
     }) }}
 
@@ -36,6 +41,8 @@
         type: 'number',
         min: 1,
         max: 100,
+        disabled: config.defaultSearchLimit is defined,
+        warning: config.defaultSearchLimit is defined ? configWarning('defaultSearchLimit'),
         errors: settings.getErrors('defaultSearchLimit'),
     }) }}
 
@@ -52,6 +59,8 @@
         type: 'number',
         min: 1,
         max: 10,
+        disabled: config.defaultSerializationDepth is defined,
+        warning: config.defaultSerializationDepth is defined ? configWarning('defaultSerializationDepth'),
         errors: settings.getErrors('defaultSerializationDepth'),
     }) }}
 
@@ -64,6 +73,8 @@
         type: 'number',
         min: 1,
         max: 10,
+        disabled: config.maxSerializationDepth is defined,
+        warning: config.maxSerializationDepth is defined ? configWarning('maxSerializationDepth'),
         errors: settings.getErrors('maxSerializationDepth'),
     }) }}
 
@@ -80,5 +91,7 @@
         type: 'number',
         min: 0,
         max: 365,
+        disabled: config.auditLogRetentionDays is defined,
+        warning: config.auditLogRetentionDays is defined ? configWarning('auditLogRetentionDays'),
         errors: settings.getErrors('auditLogRetentionDays'),
     }) }}

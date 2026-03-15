@@ -8,12 +8,10 @@ const emit = defineEmits<{
 }>();
 
 const suggestions = [
-  'Search for recent entries',
-  'List all available sections',
-  'Show me draft entries',
-  'Help me create a new entry',
-  'Find entries by a specific author',
-  'What content types exist?',
+  'Summarize the content of my latest blog posts',
+  'What sections and entry types are available',
+  'Translate this entry to German',
+  'Write an SEO-optimized description',
 ];
 </script>
 

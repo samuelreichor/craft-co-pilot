@@ -26,6 +26,7 @@ import SlideoutApp from './SlideoutApp.vue';
         const app = createApp(SlideoutApp, {
           contextId: contextEntryId,
           siteHandle: contextSiteHandle,
+          executionMode: window.__coPilotExecutionMode ?? 'supervised',
         });
         vueInstance = app.mount(mountEl) as InstanceType<typeof SlideoutApp>;
       }

@@ -40,9 +40,11 @@ interface Window {
     contextId?: number | null;
     activeConversationId?: number | null;
     siteHandle?: string | null;
+    executionMode?: string | null;
   };
   __coPilotEntryId?: number | null;
   __coPilotSiteHandle?: string | null;
+  __coPilotExecutionMode?: string | null;
   coPilotApp?: {
     openWithContext: (entryId: number) => void;
   };

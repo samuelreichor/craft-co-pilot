@@ -1,4 +1,5 @@
 {% import '_includes/forms.twig' as forms %}
+{% from 'co-pilot/settings/_macros' import configWarning %}
 
     {{ forms.selectField({
         label: 'Default Provider',
@@ -11,6 +12,8 @@
             { label: 'Anthropic', value: 'anthropic' },
             { label: 'Google Gemini', value: 'gemini' },
         ],
+        disabled: config.defaultProvider is defined,
+        warning: config.defaultProvider is defined ? configWarning('defaultProvider'),
         errors: settings.getErrors('defaultProvider'),
     }) }}
 
@@ -28,6 +31,8 @@
                 value: settings.openaiApiKeyEnvVar,
                 suggestEnvVars: true,
                 placeholder: '$OPENAI_API_KEY',
+                disabled: config.openaiApiKeyEnvVar is defined,
+                warning: config.openaiApiKeyEnvVar is defined ? configWarning('openaiApiKeyEnvVar'),
                 errors: settings.getErrors('openaiApiKeyEnvVar'),
             }) }}
         </div>
@@ -39,6 +44,8 @@
                 name: 'openaiModel',
                 value: settings.openaiModel,
                 options: modelOptions.openai ?? [],
+                disabled: config.openaiModel is defined,
+                warning: config.openaiModel is defined ? configWarning('openaiModel'),
                 errors: settings.getErrors('openaiModel'),
             }) }}
         </div>
@@ -58,6 +65,8 @@
                 value: settings.anthropicApiKeyEnvVar,
                 suggestEnvVars: true,
                 placeholder: '$ANTHROPIC_API_KEY',
+                disabled: config.anthropicApiKeyEnvVar is defined,
+                warning: config.anthropicApiKeyEnvVar is defined ? configWarning('anthropicApiKeyEnvVar'),
                 errors: settings.getErrors('anthropicApiKeyEnvVar'),
             }) }}
         </div>
@@ -69,6 +78,8 @@
                 name: 'anthropicModel',
                 value: settings.anthropicModel,
                 options: modelOptions.anthropic ?? [],
+                disabled: config.anthropicModel is defined,
+                warning: config.anthropicModel is defined ? configWarning('anthropicModel'),
                 errors: settings.getErrors('anthropicModel'),
             }) }}
         </div>
@@ -88,6 +99,8 @@
                 value: settings.geminiApiKeyEnvVar,
                 suggestEnvVars: true,
                 placeholder: '$GEMINI_API_KEY',
+                disabled: config.geminiApiKeyEnvVar is defined,
+                warning: config.geminiApiKeyEnvVar is defined ? configWarning('geminiApiKeyEnvVar'),
                 errors: settings.getErrors('geminiApiKeyEnvVar'),
             }) }}
         </div>
@@ -99,6 +112,8 @@
                 name: 'geminiModel',
                 value: settings.geminiModel,
                 options: modelOptions.gemini ?? [],
+                disabled: config.geminiModel is defined,
+                warning: config.geminiModel is defined ? configWarning('geminiModel'),
                 errors: settings.getErrors('geminiModel'),
             }) }}
         </div>

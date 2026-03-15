@@ -36,6 +36,7 @@ class SettingsController extends Controller
             'plugin' => $plugin,
             'settings' => $plugin->getSettings(),
             'modelOptions' => $modelOptions,
+            'config' => Craft::$app->getConfig()->getConfigFromFile('co-pilot'),
         ]);
     }
 

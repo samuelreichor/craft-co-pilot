@@ -47,6 +47,7 @@
 }
 .co-pilot-slideout-body .co-pilot-input {
     flex-shrink: 0;
+    padding: 16px 2px 0;
 }
 .co-pilot-slideout-actions {
     flex-shrink: 0;
@@ -54,8 +55,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 8px 16px;
-    border-bottom: 1px solid var(--gray-200);
+    padding-bottom: 16px;
 }
 /* Dropdown */
 .co-pilot-slideout-dropdown-wrap {
@@ -129,4 +129,5 @@
 <script>
     window.__coPilotEntryId = {{ entryId ?? 'null' }};
     window.__coPilotSiteHandle = {{ (siteHandle ?? null)|json_encode|raw }};
+    window.__coPilotExecutionMode = {{ craft.app.plugins.getPlugin('co-pilot').getSettings().agentExecutionMode|json_encode|raw }};
 </script>

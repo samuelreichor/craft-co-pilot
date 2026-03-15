@@ -1,4 +1,5 @@
 {% import '_includes/forms.twig' as forms %}
+{% from 'co-pilot/settings/_macros' import configWarning %}
 
     {{ forms.selectField({
         label: 'Execution Mode',
@@ -10,6 +11,8 @@
             { label: 'Supervised', value: 'supervised' },
             { label: 'Autonomous', value: 'autonomous' },
         ],
+        disabled: config.agentExecutionMode is defined,
+        warning: config.agentExecutionMode is defined ? configWarning('agentExecutionMode'),
         errors: settings.getErrors('agentExecutionMode'),
     }) }}
 
@@ -28,6 +31,8 @@
             { label: 'Direct Save', value: 'directSave' },
             { label: 'Draft', value: 'draft' },
         ],
+        disabled: config.elementUpdateBehavior is defined,
+        warning: config.elementUpdateBehavior is defined ? configWarning('elementUpdateBehavior'),
         errors: settings.getErrors('elementUpdateBehavior'),
     }) }}
 
@@ -42,6 +47,8 @@
             { label: 'Direct Save', value: 'directSave' },
             { label: 'Disabled', value: 'disabled' },
         ],
+        disabled: config.elementCreationBehavior is defined,
+        warning: config.elementCreationBehavior is defined ? configWarning('elementCreationBehavior'),
         errors: settings.getErrors('elementCreationBehavior'),
     }) }}
 
@@ -55,5 +62,7 @@
         id: 'webSearchEnabled',
         name: 'webSearchEnabled',
         on: settings.webSearchEnabled,
+        disabled: config.webSearchEnabled is defined,
+        warning: config.webSearchEnabled is defined ? configWarning('webSearchEnabled'),
         errors: settings.getErrors('webSearchEnabled'),
     }) }}

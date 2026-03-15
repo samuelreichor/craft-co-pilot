@@ -12,7 +12,7 @@ const init = window.__COPILOT_INIT__ || {};
 
 const { models, currentModel, currentProvider, providers, switchProvider } =
   useModels();
-const executionMode = ref('supervised');
+const executionMode = ref(init.executionMode || 'supervised');
 const {
   conversations,
   activeConversationId,

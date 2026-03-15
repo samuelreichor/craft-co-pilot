@@ -10,7 +10,10 @@ import ChatPanel from './components/ChatPanel.vue';
 const props = defineProps<{
   contextId: number;
   siteHandle?: string | null;
+  executionMode?: string | null;
 }>();
+
+const activeExecutionMode = ref(props.executionMode || 'supervised');
 
 const chatPanel = ref<InstanceType<typeof ChatPanel> | null>(null);
 const dropdownWrap = ref<HTMLElement | null>(null);
@@ -145,7 +148,7 @@ defineExpose({ loadHistory, focusInput });
       <div ref="dropdownWrap" class="co-pilot-slideout-dropdown-wrap">
         <button
           type="button"
-          class="btn small co-pilot-slideout-dropdown-toggle"
+          class="btn co-pilot-slideout-dropdown-toggle"
           @click="toggleDropdown"
         >
           <span class="co-pilot-slideout-dropdown-label">
@@ -156,7 +159,9 @@ defineExpose({ loadHistory, focusInput });
                 : 'New Chat'
             }}
           </span>
-          <span class="co-pilot-slideout-dropdown-caret">&#9662;</span>
+          <span class="co-pilot-slideout-dropdown-caret">
+            <svg height="16" width="16" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><path d="M297.4 470.6C309.9 483.1 330.2 483.1 342.7 470.6L534.7 278.6C547.2 266.1 547.2 245.8 534.7 233.3C522.2 220.8 501.9 220.8 489.4 233.3L320 402.7L150.6 233.4C138.1 220.9 117.8 220.9 105.3 233.4C92.8 245.9 92.8 266.2 105.3 278.7L297.3 470.7z"/></svg>
+          </span>
         </button>
         <div v-if="showDropdown" class="co-pilot-slideout-dropdown">
           <button
@@ -180,24 +185,26 @@ defineExpose({ loadHistory, focusInput });
           </div>
         </div>
       </div>
-      <button type="button" class="btn small" @click="newChat">+ New</button>
       <button
         v-if="activeConversationId"
         type="button"
-        class="btn small"
+        class="btn"
         :disabled="isExporting"
         title="Export debug log"
         @click="exportDebug(activeConversationId!)"
       >
         {{ isExporting ? '...' : 'Export Debug' }}
       </button>
+      <button type="button" class="btn submit" @click="newChat">New Chat +</button>
     </div>
     <ChatPanel
       ref="chatPanel"
       context-type="entry"
       :context-id="contextId"
       :site-handle="siteHandle"
+      :execution-mode="activeExecutionMode"
       @conversation-created="onConversationCreated"
+      @update:execution-mode="activeExecutionMode = $event"
       @command="handleCommand"
     />
   </div>
