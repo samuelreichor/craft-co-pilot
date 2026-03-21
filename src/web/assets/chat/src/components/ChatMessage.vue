@@ -3,7 +3,6 @@ import { computed } from 'vue';
 import type { UIMessage } from '../types';
 import { renderMarkdown, escapeHtml } from '../utils/markdown';
 import AttachmentPill from './AttachmentPill.vue';
-import ThinkingBlock from './ThinkingBlock.vue';
 
 const props = defineProps<{
   message: UIMessage;
@@ -26,6 +25,11 @@ const hasAttachments = computed(
 const hasToolCalls = computed(
   () => props.message.toolCalls && props.message.toolCalls.length > 0,
 );
+
+const toolSummary = computed(() => {
+  const total = props.message.toolCalls?.length ?? 0;
+  return `${total} tool${total !== 1 ? 's' : ''} used`;
+});
 
 const modifiedEntries = computed(() => {
   if (!props.message.toolCalls) return [];
@@ -59,31 +63,31 @@ const hasTokens = computed(
         :readonly="true"
       />
     </div>
-    <ThinkingBlock
-      v-if="message.thinking"
-      :content="message.thinking"
-      :is-streaming="false"
-    />
     <div class="co-pilot-message__content" v-html="renderedContent" />
-    <div v-if="hasToolCalls" class="co-pilot-message__checklist">
-      <div
-        v-for="(tc, i) in message.toolCalls"
-        :key="i"
-        class="co-pilot-message__check-item"
-      >
-        <span
-          class="co-pilot-message__check-icon"
-          :class="
-            tc.success
-              ? 'co-pilot-message__check-icon--ok'
-              : 'co-pilot-message__check-icon--fail'
-          "
+    <details v-if="hasToolCalls" class="co-pilot-tool-details">
+      <summary class="co-pilot-tool-details__summary">
+        <span>{{ toolSummary }}</span>
+      </summary>
+      <div class="co-pilot-tool-details__list">
+        <div
+          v-for="(tc, i) in message.toolCalls"
+          :key="i"
+          class="co-pilot-tool-details__item"
         >
-          {{ tc.success ? '&#10003;' : '&#10007;' }}
-        </span>
-        <span class="co-pilot-message__check-name">{{ tc.name }}</span>
+          <span
+            class="co-pilot-tool-details__icon"
+            :class="
+              tc.success
+                ? 'co-pilot-tool-details__icon--ok'
+                : 'co-pilot-tool-details__icon--fail'
+            "
+          >
+            {{ tc.success ? '&#10003;' : '&#10007;' }}
+          </span>
+          <span class="co-pilot-tool-details__name">{{ tc.name }}</span>
+        </div>
       </div>
-    </div>
+    </details>
     <div v-if="modifiedEntries.length" class="co-pilot-message__entries">
       <a
         v-for="entry in modifiedEntries"

@@ -85,7 +85,6 @@ defineExpose({
       :compact="compact"
       :is-streaming="chat.isStreaming.value"
       :streaming-text="chat.streamingText.value"
-      :streaming-thinking="chat.streamingThinking.value"
       :live-tool-calls="chat.liveToolCalls.value"
       @suggest="handleSend"
     />

@@ -11,7 +11,6 @@ const props = defineProps<{
   compact?: boolean;
   isStreaming?: boolean;
   streamingText?: string;
-  streamingThinking?: string;
   liveToolCalls?: LiveToolCall[];
 }>();
 
@@ -32,7 +31,6 @@ function scrollToBottom() {
 watch(() => props.messages, scrollToBottom, { deep: true });
 watch(() => props.isLoading, scrollToBottom);
 watch(() => props.streamingText, scrollToBottom);
-watch(() => props.streamingThinking, scrollToBottom);
 
 onMounted(scrollToBottom);
 </script>
@@ -52,7 +50,6 @@ onMounted(scrollToBottom);
     <StreamingMessage
       v-if="isStreaming"
       :text="streamingText || ''"
-      :thinking="streamingThinking"
       :tool-calls="liveToolCalls || []"
     />
     <div v-if="isLoading && !isStreaming" class="co-pilot-loading">

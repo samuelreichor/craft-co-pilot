@@ -30,9 +30,6 @@ export interface UIMessage {
   toolCalls?: ToolCall[] | null;
   inputTokens: number;
   outputTokens: number;
-  /** Streaming-specific fields */
-  thinking?: string;
-  isStreaming?: boolean;
 }
 
 export interface ConversationSummary {
@@ -50,7 +47,6 @@ export interface ChatPanelProps {
 
 /** SSE event types from the backend */
 export type StreamEventType =
-  | 'thinking'
   | 'text_delta'
   | 'tool_start'
   | 'tool_end'

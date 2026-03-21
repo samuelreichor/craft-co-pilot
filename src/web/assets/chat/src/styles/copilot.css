@@ -291,46 +291,78 @@
     text-decoration: underline;
 }
 
-/* ── Tool Calls Checklist ─────────────────────────────────────────────── */
+/* ── Tool Calls (collapsible details) ─────────────────────────────────── */
 
-.co-pilot-message__checklist {
+.co-pilot-tool-details {
     margin-top: 8px;
-    padding: 6px 0;
-    border-top: 1px solid var(--gray-200);
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    font-size: 13px;
 }
 
-.co-pilot-message__check-item {
+.co-pilot-tool-details__summary {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    padding: 2px 0;
-    color: var(--gray-600);
+    gap: 8px;
+    padding: 6px 10px;
+    cursor: pointer;
+    color: var(--gray-500);
+    font-weight: 500;
+    user-select: none;
+    list-style: none;
 }
 
-.co-pilot-message__check-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 14px;
-    height: 14px;
-    font-size: 11px;
-    font-weight: 700;
+.co-pilot-tool-details__summary::-webkit-details-marker {
+    display: none;
+}
+
+.co-pilot-tool-details__summary::before {
+    content: '▶';
+    font-size: 9px;
+    transition: transform 0.15s ease;
     flex-shrink: 0;
 }
 
-.co-pilot-message__check-icon--ok {
-    color: var(--green-500);
+.co-pilot-tool-details[open] > .co-pilot-tool-details__summary::before {
+    transform: rotate(90deg);
 }
 
-.co-pilot-message__check-icon--fail {
-    color: var(--red-500);
+.co-pilot-tool-details__list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 10px 8px;
 }
 
-.co-pilot-message__check-name {
+.co-pilot-tool-details__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--gray-500);
+    padding: 1px 0;
+}
+
+.co-pilot-tool-details__name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.co-pilot-tool-details__icon {
+    font-size: 11px;
+    width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+    font-weight: 700;
+}
+
+.co-pilot-tool-details__icon--ok {
+    color: var(--teal-500, #14b8a6);
+}
+
+.co-pilot-tool-details__icon--fail {
+    color: var(--red-500, #ef4444);
 }
 
 /* ── Token Info ──────────────────────────────────────────────────────── */

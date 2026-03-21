@@ -574,16 +574,26 @@ class ChatController extends Controller
      * @param Message[] $messages
      * @return array<int, array<string, mixed>>
      */
+    /**
+     * Collapses agent-loop messages into one assistant UI message per turn.
+     * Each turn: user message → (N agent iterations) → final assistant text.
+     * Result: tool calls from all iterations + only the final assistant text.
+     *
+     * @param Message[] $messages
+     * @return array<int, array<string, mixed>>
+     */
     private function buildUiMessages(array $messages): array
     {
         $uiMessages = [];
-        /** @var array<int, array{name: string|null, success: bool, entryId: int|null, entryTitle: string|null, cpEditUrl: string|null}> $pendingToolCalls */
-        $pendingToolCalls = [];
+        /** @var array<int, array{name: string|null, success: bool, entryId: int|null, entryTitle: string|null, cpEditUrl: string|null}> $turnToolCalls */
+        $turnToolCalls = [];
+        /** @var string|null $lastAssistantText */
+        $lastAssistantText = null;
 
         foreach ($messages as $msg) {
             if ($msg->role === MessageRole::Tool) {
                 $content = is_array($msg->content) ? $msg->content : [];
-                $pendingToolCalls[] = [
+                $turnToolCalls[] = [
                     'name' => $msg->toolName,
                     'success' => $msg->isError !== true,
                     'entryId' => isset($content['entryId']) ? (int)$content['entryId'] : null,
@@ -594,26 +604,48 @@ class ChatController extends Controller
                 continue;
             }
 
-            if ($msg->role === MessageRole::Assistant && $msg->content === null) {
+            if ($msg->role === MessageRole::Assistant) {
+                // Track the latest assistant text (overwrite previous narration)
+                if ($msg->content !== null) {
+                    $lastAssistantText = is_string($msg->content) ? $msg->content : json_encode($msg->content);
+                }
+
                 continue;
             }
 
             if ($msg->role === MessageRole::User) {
-                $uiMessages[] = $msg->toArray();
+                // Flush any pending assistant turn before adding the next user message
+                if ($lastAssistantText !== null) {
+                    $assistantMsg = [
+                        'role' => MessageRole::Assistant->value,
+                        'content' => $lastAssistantText,
+                    ];
 
-                continue;
-            }
+                    if ($turnToolCalls !== []) {
+                        $assistantMsg['toolCalls'] = $turnToolCalls;
+                        $turnToolCalls = [];
+                    }
 
-            if ($msg->role === MessageRole::Assistant) {
-                $data = $msg->toArray();
-
-                if ($pendingToolCalls !== []) {
-                    $data['toolCalls'] = $pendingToolCalls;
-                    $pendingToolCalls = [];
+                    $uiMessages[] = $assistantMsg;
+                    $lastAssistantText = null;
                 }
 
-                $uiMessages[] = $data;
+                $uiMessages[] = $msg->toArray();
             }
+        }
+
+        // Flush the last assistant turn
+        if ($lastAssistantText !== null) {
+            $assistantMsg = [
+                'role' => MessageRole::Assistant->value,
+                'content' => $lastAssistantText,
+            ];
+
+            if ($turnToolCalls !== []) {
+                $assistantMsg['toolCalls'] = $turnToolCalls;
+            }
+
+            $uiMessages[] = $assistantMsg;
         }
 
         return $uiMessages;

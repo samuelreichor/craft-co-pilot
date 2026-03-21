@@ -35,7 +35,6 @@ export function useChat(options: UseChatOptions) {
 
   // Streaming state
   const streamingText = ref('');
-  const streamingThinking = ref('');
   const liveToolCalls = ref<LiveToolCall[]>([]);
   const isStreaming = ref(false);
 
@@ -47,7 +46,6 @@ export function useChat(options: UseChatOptions) {
     () =>
       isStreaming.value &&
       (streamingText.value !== '' ||
-        streamingThinking.value !== '' ||
         liveToolCalls.value.length > 0),
   );
 
@@ -132,7 +130,6 @@ export function useChat(options: UseChatOptions) {
   ) {
     isStreaming.value = true;
     streamingText.value = '';
-    streamingThinking.value = '';
     liveToolCalls.value = [];
 
     const connection = connect(
@@ -151,14 +148,14 @@ export function useChat(options: UseChatOptions) {
       {
         onEvent(event) {
           switch (event.type) {
-            case 'thinking':
-              streamingThinking.value += (event.data.delta as string) || '';
-              break;
             case 'text_delta':
               streamingText.value += (event.data.delta as string) || '';
               break;
             case 'tool_start': {
               const ts = event.data as unknown as ToolStartData;
+              // Clear any pre-tool-call narration text so it doesn't
+              // appear in the final message
+              streamingText.value = '';
               liveToolCalls.value.push({
                 id: ts.id,
                 name: ts.name,
@@ -192,7 +189,6 @@ export function useChat(options: UseChatOptions) {
           // Streaming not available — fall back to legacy
           isStreaming.value = false;
           streamingText.value = '';
-          streamingThinking.value = '';
           liveToolCalls.value = [];
           sendLegacy(message, sendContextId, model, sendAttachments, executionMode, provider);
           console.warn('SSE failed, falling back to legacy:', error.message);
@@ -211,7 +207,6 @@ export function useChat(options: UseChatOptions) {
 
   function finalizeStream(done?: StreamDoneData) {
     const text = streamingText.value || 'No response received.';
-    const thinking = streamingThinking.value || undefined;
     const toolCalls: ToolCall[] | null =
       liveToolCalls.value.length > 0
         ? liveToolCalls.value.map((tc) => ({
@@ -226,7 +221,6 @@ export function useChat(options: UseChatOptions) {
     messages.value.push({
       role: 'assistant',
       content: text,
-      thinking,
       toolCalls,
       inputTokens: done?.inputTokens ?? 0,
       outputTokens: done?.outputTokens ?? 0,
@@ -240,7 +234,6 @@ export function useChat(options: UseChatOptions) {
     // Reset streaming state
     isStreaming.value = false;
     streamingText.value = '';
-    streamingThinking.value = '';
     liveToolCalls.value = [];
     isLoading.value = false;
     abortConnection = null;
@@ -304,7 +297,6 @@ export function useChat(options: UseChatOptions) {
     conversationId.value = null;
     attachments.value = [];
     streamingText.value = '';
-    streamingThinking.value = '';
     liveToolCalls.value = [];
     isStreaming.value = false;
     isLoading.value = false;
@@ -318,7 +310,6 @@ export function useChat(options: UseChatOptions) {
     contextId,
     isStreaming,
     streamingText,
-    streamingThinking,
     liveToolCalls,
     hasStreamingContent,
     setMessages,

@@ -256,9 +256,6 @@ class AgentService extends Component
                 $model,
                 function(StreamChunk $chunk) use (&$iterationText, &$iterationToolCalls, &$totalInputTokens, &$totalOutputTokens, &$iterationHadError, &$iterationRawModelParts, $emit): void {
                     switch ($chunk->type) {
-                        case 'thinking':
-                            $emit('thinking', ['delta' => $chunk->delta]);
-                            break;
                         case 'text_delta':
                             $iterationText .= $chunk->delta;
                             $emit('text_delta', ['delta' => $chunk->delta]);
@@ -321,7 +318,8 @@ class AgentService extends Component
                 break;
             }
 
-            $fullText .= $iterationText;
+            // Don't accumulate pre-tool-call narration into the final response text.
+            // The text is still preserved in the messages array for the model context.
 
             $messages[] = [
                 'role' => MessageRole::Assistant->value,
