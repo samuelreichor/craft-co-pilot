@@ -95,6 +95,11 @@ class OpenAIProvider implements ProviderInterface
         ];
     }
 
+    public function getTitleModel(): string
+    {
+        return 'gpt-5-nano';
+    }
+
     public function getName(): string
     {
         return 'OpenAI';

@@ -68,6 +68,11 @@ class GeminiProvider implements ProviderInterface
         ];
     }
 
+    public function getTitleModel(): string
+    {
+        return 'gemini-2.5-flash';
+    }
+
     public function getName(): string
     {
         return 'Google Gemini';

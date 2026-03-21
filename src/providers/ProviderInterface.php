@@ -57,6 +57,11 @@ interface ProviderInterface
     public function getIcon(): string;
 
     /**
+     * Returns a fast, cheap model identifier used for lightweight tasks like title generation.
+     */
+    public function getTitleModel(): string;
+
+    /**
      * Validates that the given API key is functional.
      */
     public function validateApiKey(string $key): bool;

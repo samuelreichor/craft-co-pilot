@@ -120,6 +120,11 @@ class AnthropicProvider implements ProviderInterface
         ];
     }
 
+    public function getTitleModel(): string
+    {
+        return 'claude-haiku-4-5-20251001';
+    }
+
     public function getName(): string
     {
         return 'Anthropic';
@@ -350,7 +355,7 @@ class AnthropicProvider implements ProviderInterface
             }
         }
 
-        $text = implode("\n", $textParts) ?: null;
+        $text = implode("\n\n", $textParts) ?: null;
         $type = !empty($toolCalls) ? 'tool_call' : 'text';
         $stopReason = $data['stop_reason'] ?? 'unknown';
 
@@ -411,18 +416,13 @@ class AnthropicProvider implements ProviderInterface
                 $stopReason = $json['delta']['stop_reason'];
             }
 
-            if ($currentEvent === 'content_block_delta'
-                && ($json['delta']['type'] ?? '') === 'text_delta'
-                && ($json['delta']['text'] ?? '') !== '') {
-                $hasTextContent = true;
-            }
-
             $this->processAnthropicEvent(
                 $currentEvent,
                 $json,
                 $toolCalls,
                 $currentBlockType,
                 $currentBlockId,
+                $hasTextContent,
                 $onChunk,
             );
         };
@@ -491,6 +491,7 @@ class AnthropicProvider implements ProviderInterface
         array &$toolCalls,
         ?string &$currentBlockType,
         ?string &$currentBlockId,
+        bool &$hasTextContent,
         callable $onChunk,
     ): void {
         switch ($event) {
@@ -504,8 +505,10 @@ class AnthropicProvider implements ProviderInterface
                         'name' => $block['name'] ?? '',
                         'input' => '',
                     ];
-                } elseif ($currentBlockType === 'thinking') {
-                    // Thinking block started
+                } elseif ($currentBlockType === 'text' && $hasTextContent) {
+                    // Separate multiple text blocks (e.g. before/after web search)
+                    // with a blank line so Markdown headings render correctly.
+                    $onChunk(new StreamChunk('text_delta', delta: "\n\n"));
                 }
                 break;
 
@@ -514,6 +517,7 @@ class AnthropicProvider implements ProviderInterface
                 $deltaType = $delta['type'] ?? '';
 
                 if ($deltaType === 'text_delta') {
+                    $hasTextContent = true;
                     $onChunk(new StreamChunk('text_delta', delta: $delta['text'] ?? ''));
                 } elseif ($deltaType === 'thinking_delta') {
                     $onChunk(new StreamChunk('thinking', delta: $delta['thinking'] ?? ''));

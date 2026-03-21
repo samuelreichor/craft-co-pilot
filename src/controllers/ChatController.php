@@ -371,6 +371,7 @@ class ChatController extends Controller
 
         $persistContextType = $contextType === 'entry' ? 'entry' : 'global';
         $persistContextId = $persistContextType === 'entry' && $contextId ? (int)$contextId : null;
+        $isNewConversation = $conversationId === null;
 
         $conversationId = $this->persistConversation(
             $conversationId ? (int)$conversationId : null,
@@ -383,6 +384,11 @@ class ChatController extends Controller
         );
 
         $plugin->auditService->linkToConversation($conversationId);
+
+        if ($isNewConversation && $conversationId) {
+            $providerHandle = $this->request->getBodyParam('provider');
+            $this->generateAndUpdateTitle($conversationId, $message, $providerHandle);
+        }
 
         $includeDebug = (bool) $this->request->getBodyParam('debug');
         if ($includeDebug && isset($result['debug']['messages'])) {
@@ -462,6 +468,8 @@ class ChatController extends Controller
         $persistContextType = $contextType === 'entry' ? 'entry' : 'global';
         $persistContextId = $persistContextType === 'entry' && $contextId ? (int)$contextId : null;
 
+        $isNewConversation = $conversationId === null;
+
         $conversationId = $this->persistConversation(
             $conversationId ? (int)$conversationId : null,
             $result['newMessages'],
@@ -479,11 +487,17 @@ class ChatController extends Controller
                 . mb_substr($message, 0, 100));
         }
 
+        // Send done immediately so the client stops waiting
         $this->sendSSE('done', [
             'conversationId' => $conversationId,
             'inputTokens' => $result['inputTokens'],
             'outputTokens' => $result['outputTokens'],
         ]);
+
+        // Generate a proper title after the stream is done (client won't notice the delay)
+        if ($isNewConversation && $conversationId) {
+            $this->generateAndUpdateTitle($conversationId, $message, $providerHandle);
+        }
 
         $this->endSSE();
     }
@@ -555,15 +569,9 @@ class ChatController extends Controller
             $conversation = $plugin->conversationService->getById($conversationId);
         }
 
-        $title = 'New conversation';
-        foreach ($newMessages as $msg) {
-            if (($msg['role'] ?? '') === MessageRole::User->value && is_string($msg['content'] ?? null)) {
-                $title = $this->generateTitle($msg['content']);
-                break;
-            }
-        }
-
         if ($conversation === null) {
+            $title = mb_substr($this->extractUserMessage($newMessages), 0, 100) ?: 'New conversation';
+
             $conversation = new Conversation(
                 userId: $user->id,
                 title: $title,
@@ -736,23 +744,52 @@ class ChatController extends Controller
         ]);
     }
 
-    private function generateTitle(string $userMessage): string
+    /**
+     * Generates a title with a fast model and updates the conversation in the database.
+     * Called after the stream's done event so the client doesn't wait for it.
+     */
+    private function generateAndUpdateTitle(int $conversationId, string $userMessage, ?string $providerHandle): void
     {
-        $fallback = mb_substr($userMessage, 0, 100);
-
         try {
-            $provider = CoPilot::getInstance()->providerService->getActiveProvider();
+            $plugin = CoPilot::getInstance();
+            $provider = $plugin->providerService->getActiveProvider($providerHandle);
             $response = $provider->chat(
                 'You generate ultra-short conversation titles. Respond with only 2-4 words, no punctuation.',
                 [['role' => 'user', 'content' => 'Summarize this message as a title: ' . mb_substr($userMessage, 0, 200)]],
                 [],
+                $provider->getTitleModel(),
             );
 
             $title = trim($response->text ?? '');
+            if ($title === '') {
+                return;
+            }
 
-            return $title !== '' ? mb_substr($title, 0, 100) : $fallback;
-        } catch (\Throwable) {
-            return $fallback;
+            $title = mb_substr($title, 0, 100);
+
+            Craft::$app->getDb()->createCommand()->update(
+                Constants::TABLE_CONVERSATIONS,
+                ['title' => $title],
+                ['id' => $conversationId],
+            )->execute();
+        } catch (\Throwable $e) {
+            Logger::warning('Failed to generate title: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Extracts the first user message from a new-messages array.
+     *
+     * @param array<int, array<string, mixed>> $messages
+     */
+    private function extractUserMessage(array $messages): string
+    {
+        foreach ($messages as $msg) {
+            if (($msg['role'] ?? '') === MessageRole::User->value && is_string($msg['content'] ?? null)) {
+                return $msg['content'];
+            }
+        }
+
+        return '';
     }
 }
