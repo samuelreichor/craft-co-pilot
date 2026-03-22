@@ -2,6 +2,7 @@
 
 namespace samuelreichor\coPilot\tools;
 
+use Craft;
 use craft\elements\Tag;
 use samuelreichor\coPilot\CoPilot;
 
@@ -59,6 +60,20 @@ class SearchTagsTool implements ToolInterface
         }
 
         if ($groupHandle) {
+            $tagGroup = Craft::$app->getTags()->getTagGroupByHandle($groupHandle);
+            if (!$tagGroup) {
+                $validGroups = array_map(fn($g) => $g->handle, Craft::$app->getTags()->getAllTagGroups());
+
+                return [
+                    'total' => 0,
+                    'results' => [],
+                    'error' => "Tag group \"{$groupHandle}\" not found.",
+                    'availableGroups' => $validGroups,
+                    'retryHint' => !empty($validGroups)
+                        ? 'Use one of the available tag group handles listed above.'
+                        : 'No tag groups exist. If this is an entries relation field, use searchEntries instead.',
+                ];
+            }
             $query->group($groupHandle);
         }
 

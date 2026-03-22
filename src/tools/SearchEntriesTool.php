@@ -81,7 +81,19 @@ class SearchEntriesTool implements ToolInterface
         $query = Entry::find()->limit($limit);
 
         if ($siteHandle) {
-            $query->site($siteHandle);
+            $site = Craft::$app->getSites()->getSiteByHandle($siteHandle);
+            if (!$site) {
+                $validHandles = array_map(fn($s) => $s->handle, Craft::$app->getSites()->getAllSites());
+
+                return [
+                    'total' => 0,
+                    'results' => [],
+                    'error' => "Site \"{$siteHandle}\" not found. This parameter expects a site handle, not a site name.",
+                    'availableSites' => $validHandles,
+                    'retryHint' => 'Use one of the available site handles listed above.',
+                ];
+            }
+            $query->siteId($site->id);
         }
 
         if ($authorId) {
