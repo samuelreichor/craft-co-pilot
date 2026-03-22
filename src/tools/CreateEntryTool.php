@@ -6,6 +6,7 @@ use Craft;
 use craft\base\Element;
 use craft\elements\Entry;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\AuditAction;
 use samuelreichor\coPilot\enums\ElementCreationBehavior;
 use samuelreichor\coPilot\enums\SectionAccess;
 
@@ -14,6 +15,16 @@ class CreateEntryTool implements ToolInterface
     public function getName(): string
     {
         return 'createEntry';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Create Entry';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Create;
     }
 
     public function getDescription(): string

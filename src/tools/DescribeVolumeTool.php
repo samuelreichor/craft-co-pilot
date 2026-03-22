@@ -3,12 +3,23 @@
 namespace samuelreichor\coPilot\tools;
 
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\AuditAction;
 
 class DescribeVolumeTool implements ToolInterface
 {
     public function getName(): string
     {
         return 'describeVolume';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Describe Volume';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Read;
     }
 
     public function getDescription(): string

@@ -4,12 +4,23 @@ namespace samuelreichor\coPilot\tools;
 
 use craft\elements\Asset;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\AuditAction;
 
 class ReadAssetTool implements ToolInterface
 {
     public function getName(): string
     {
         return 'readAsset';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Read Asset';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Read;
     }
 
     public function getDescription(): string

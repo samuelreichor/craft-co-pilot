@@ -36,8 +36,10 @@
 .co-pilot-diff-single--added .co-pilot-diff-header { background: #dcfce7; color: #059669; }
 .co-pilot-diff-single--removed { background: #fff5f5; }
 .co-pilot-diff-single--removed .co-pilot-diff-header { background: #fee2e2; color: #dc2626; }
-.co-pilot-audit-action--create { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #ecfdf5; color: #059669; }
-.co-pilot-audit-action--update { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #eff6ff; color: #2563eb; }
+.co-pilot-audit-action { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.co-pilot-audit-action--create { background: #ecfdf5; color: #059669; }
+.co-pilot-audit-action--update { background: #eff6ff; color: #2563eb; }
+.co-pilot-audit-action--read { background: #f5f5f5; color: #737373; }
 .co-pilot-audit-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
 .co-pilot-audit-pill--success { background: #ecfdf5; color: #059669; }
 .co-pilot-audit-pill--error, .co-pilot-audit-pill--denied { background: #fef2f2; color: #dc2626; }
@@ -52,6 +54,7 @@
                 <li><a data-value="" class="sel">All Actions</a></li>
                 <li><a data-value="create">Created</a></li>
                 <li><a data-value="update">Updated</a></li>
+                <li><a data-value="read">Read</a></li>
             </ul>
         </div>
     </div>
@@ -73,9 +76,9 @@ function formatUser(value) {
 }
 
 function formatAction(value) {
-    var cls = value === 'create' ? 'co-pilot-audit-action--create' : 'co-pilot-audit-action--update';
-    var label = value === 'create' ? 'Created' : 'Updated';
-    return '<span class="' + cls + '">' + label + '</span>';
+    var labels = { create: 'Created', update: 'Updated', read: 'Read' };
+    var label = labels[value] || value;
+    return '<span class="co-pilot-audit-action co-pilot-audit-action--' + value + '">' + label + '</span>';
 }
 
 function formatStatus(value) {
@@ -99,7 +102,7 @@ var table = new Craft.VueAdminTable({
         { name: 'user', title: 'User', sortField: 'user', callback: formatUser },
         { name: 'action', title: 'Action', sortField: 'action', callback: formatAction },
         { name: 'tool', title: 'Tool', sortField: 'tool' },
-        { name: '__slot:title', title: 'Entry', sortField: '__slot:title' },
+        { name: '__slot:title', title: 'Element', sortField: '__slot:title' },
         { name: 'status', title: 'Status', callback: formatStatus },
         { name: 'conversation', title: 'Chat', callback: formatConversation },
         { name: '__slot:detail', title: '' },

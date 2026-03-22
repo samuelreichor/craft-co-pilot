@@ -3,12 +3,23 @@
 namespace samuelreichor\coPilot\tools;
 
 use Craft;
+use samuelreichor\coPilot\enums\AuditAction;
 
 class ListSitesTool implements ToolInterface
 {
     public function getName(): string
     {
         return 'listSites';
+    }
+
+    public function getLabel(): string
+    {
+        return 'List Sites';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Read;
     }
 
     public function getDescription(): string

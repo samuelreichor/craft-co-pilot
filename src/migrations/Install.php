@@ -61,7 +61,7 @@ class Install extends Migration
             'userId' => $this->integer()->notNull(),
             'conversationId' => $this->integer()->null(),
             'toolName' => $this->string(100)->notNull(),
-            'entryId' => $this->integer()->null(),
+            'elementId' => $this->integer()->null(),
             'fieldHandle' => $this->string(255)->null(),
             'action' => $this->string(50)->notNull(),
             'status' => $this->string(20)->notNull(),

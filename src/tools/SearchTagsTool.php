@@ -5,12 +5,23 @@ namespace samuelreichor\coPilot\tools;
 use Craft;
 use craft\elements\Tag;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\AuditAction;
 
 class SearchTagsTool implements ToolInterface
 {
     public function getName(): string
     {
         return 'searchTags';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Search Tags';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Search;
     }
 
     public function getDescription(): string

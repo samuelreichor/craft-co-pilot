@@ -5,12 +5,23 @@ namespace samuelreichor\coPilot\tools;
 use Craft;
 use craft\elements\User;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\AuditAction;
 
 class SearchUsersTool implements ToolInterface
 {
     public function getName(): string
     {
         return 'searchUsers';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Search Users';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Search;
     }
 
     public function getDescription(): string

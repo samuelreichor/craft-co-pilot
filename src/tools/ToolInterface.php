@@ -2,6 +2,8 @@
 
 namespace samuelreichor\coPilot\tools;
 
+use samuelreichor\coPilot\enums\AuditAction;
+
 interface ToolInterface
 {
     /**
@@ -20,6 +22,16 @@ interface ToolInterface
      * @return array<string, mixed>
      */
     public function getParameters(): array;
+
+    /**
+     * Returns a human-readable label for the audit log UI.
+     */
+    public function getLabel(): string;
+
+    /**
+     * Returns the audit action type.
+     */
+    public function getAction(): AuditAction;
 
     /**
      * Executes the tool with the given arguments.

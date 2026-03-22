@@ -3,12 +3,23 @@
 namespace samuelreichor\coPilot\tools;
 
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\AuditAction;
 
 class DescribeCategoryGroupTool implements ToolInterface
 {
     public function getName(): string
     {
         return 'describeCategoryGroup';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Describe Category Group';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Read;
     }
 
     public function getDescription(): string

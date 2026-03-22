@@ -5,6 +5,7 @@ namespace samuelreichor\coPilot\tools;
 use Craft;
 use craft\elements\Entry;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\AuditAction;
 use samuelreichor\coPilot\enums\SectionAccess;
 
 class SearchEntriesTool implements ToolInterface
@@ -12,6 +13,16 @@ class SearchEntriesTool implements ToolInterface
     public function getName(): string
     {
         return 'searchEntries';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Search Entries';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Search;
     }
 
     public function getDescription(): string

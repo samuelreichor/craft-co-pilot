@@ -2,11 +2,23 @@
 
 namespace samuelreichor\coPilot\tools;
 
+use samuelreichor\coPilot\enums\AuditAction;
+
 class UpdateEntryTool extends AbstractEntryUpdateTool
 {
     public function getName(): string
     {
         return 'updateEntry';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Update Entry';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Update;
     }
 
     public function getDescription(): string

@@ -22,8 +22,10 @@ class AuditService extends Component
     /**
      * @param array<string, mixed> $params
      * @param array<string, mixed> $result
+     * @param array<string, mixed> $params
+     * @param array<string, mixed> $result
      */
-    public function log(string $toolName, array $params, array $result): void
+    public function log(string $toolName, array $params, array $result, ?string $action = null): void
     {
         $user = Craft::$app->getUser()->getIdentity();
         if (!$user) {
@@ -38,9 +40,9 @@ class AuditService extends Component
             [
                 'userId' => $user->id,
                 'toolName' => $toolName,
-                'entryId' => $params['entryId'] ?? $result['entryId'] ?? null,
+                'elementId' => $this->resolveElementId($result, $params),
                 'fieldHandle' => $params['fieldHandle'] ?? null,
-                'action' => $this->resolveAction($toolName),
+                'action' => $action ?? 'unknown',
                 'status' => $status,
                 'details' => new JsonExpression([
                     'params' => $params,
@@ -110,7 +112,7 @@ class AuditService extends Component
                 'a.userId',
                 'a.conversationId',
                 'a.toolName',
-                'a.entryId',
+                'a.elementId',
                 'a.fieldHandle',
                 'a.action',
                 'a.status',
@@ -119,13 +121,13 @@ class AuditService extends Component
                 'u.username',
                 'u.fullName',
             ])
-            ->where(['in', 'a.action', ['create', 'update']])
+            ->where(['in', 'a.action', ['create', 'update', 'read']])
             ->orderBy($orderBy !== [] ? $orderBy : ['a.dateCreated' => SORT_DESC]);
 
         if ($siteId) {
             $query->innerJoin(
                 ['es' => '{{%elements_sites}}'],
-                '[[a.entryId]] = [[es.elementId]] AND [[es.siteId]] = :siteId',
+                '[[a.elementId]] = [[es.elementId]] AND [[es.siteId]] = :siteId',
                 [':siteId' => $siteId],
             );
         }
@@ -167,15 +169,29 @@ class AuditService extends Component
         return is_array($decoded) ? $decoded : [];
     }
 
-    private function resolveAction(string $toolName): string
+    /**
+     * Extracts the element ID from the tool result (preferred) or params (fallback).
+     *
+     * @param array<string, mixed> $result
+     * @param array<string, mixed> $params
+     */
+    private function resolveElementId(array $result, array $params): ?int
     {
-        return match ($toolName) {
-            'readEntry', 'readEntries', 'readAsset', 'listSections', 'listSites', 'describeSection', 'describeEntryType' => 'read',
-            'updateField', 'updateEntry', 'publishEntry' => 'update',
-            'createEntry' => 'create',
-            'searchEntries', 'searchAssets', 'searchUsers', 'searchTags' => 'search',
-            default => 'unknown',
-        };
+        $idKeys = ['entryId', 'categoryId', 'assetId'];
+
+        foreach ($idKeys as $key) {
+            if (isset($result[$key])) {
+                return (int) $result[$key];
+            }
+        }
+
+        foreach ($idKeys as $key) {
+            if (isset($params[$key])) {
+                return (int) $params[$key];
+            }
+        }
+
+        return null;
     }
 
     /**

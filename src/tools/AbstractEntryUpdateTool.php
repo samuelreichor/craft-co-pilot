@@ -6,6 +6,7 @@ use Craft;
 use craft\elements\Entry;
 use samuelreichor\coPilot\CoPilot;
 use samuelreichor\coPilot\enums\ElementUpdateBehavior;
+use samuelreichor\coPilot\helpers\Logger;
 
 abstract class AbstractEntryUpdateTool implements ToolInterface
 {
@@ -115,7 +116,7 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
                 $entry->siteId,
                 $siteHandle ?? 'null',
             );
-            Craft::warning("UpdateEntry UnsupportedSiteException: {$debugInfo}", 'co-pilot');
+            Logger::warning("UpdateEntry UnsupportedSiteException: {$debugInfo}");
 
             return [
                 'error' => "Save failed: {$e->getMessage()} ({$debugInfo})",

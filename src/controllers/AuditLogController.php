@@ -9,6 +9,7 @@ use craft\helpers\UrlHelper;
 use craft\web\Controller;
 use samuelreichor\coPilot\constants\Constants;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\helpers\Logger;
 use yii\web\Response;
 
 class AuditLogController extends Controller
@@ -57,7 +58,7 @@ class AuditLogController extends Controller
             'user' => 'u.fullName',
             'action' => 'a.action',
             'tool' => 'a.toolName',
-            '__slot:title' => 'a.entryId',
+            '__slot:title' => 'a.elementId',
             default => 'a.dateCreated',
         };
 
@@ -90,7 +91,7 @@ class AuditLogController extends Controller
         $userUrl = UrlHelper::cpUrl('users/' . $item['userId']);
         $userName = $item['fullName'] ?: $item['username'];
 
-        $entry = $this->buildEntryCell($entryTitle, $cpEditUrl, (int) ($item['entryId'] ?? 0));
+        $entry = $this->buildEntryCell($entryTitle, $cpEditUrl, (int) ($item['elementId'] ?? 0));
         $conversationId = $item['conversationId'] ? (int) $item['conversationId'] : null;
 
         return [
@@ -115,14 +116,14 @@ class AuditLogController extends Controller
     /**
      * @return array{title: string, url: string|null}
      */
-    private function buildEntryCell(?string $entryTitle, ?string $cpEditUrl, int $entryId): array
+    private function buildEntryCell(?string $entryTitle, ?string $cpEditUrl, int $elementId): array
     {
         if ($entryTitle && $cpEditUrl) {
             return ['title' => $entryTitle, 'url' => $cpEditUrl];
         }
 
-        if ($entryId) {
-            $entry = Craft::$app->getElements()->getElementById($entryId);
+        if ($elementId) {
+            $entry = Craft::$app->getElements()->getElementById($elementId);
 
             if ($entry) {
                 return ['title' => (string) $entry, 'url' => $entry->getCpEditUrl()];
@@ -215,11 +216,16 @@ class AuditLogController extends Controller
 
     private function toolLabel(string $toolName): string
     {
-        return match ($toolName) {
-            'createEntry' => 'Create Entry',
-            'updateEntry' => 'Update Entry',
-            'updateField' => 'Update Field',
-            default => $toolName,
-        };
+        try {
+            $tools = CoPilot::getInstance()->agentService->getTools();
+
+            if (isset($tools[$toolName])) {
+                return $tools[$toolName]->getLabel();
+            }
+        } catch (\Throwable $e) {
+            Logger::error("Failed to load tool label for '{$toolName}': {$e->getMessage()}");
+        }
+
+        return $toolName;
     }
 }

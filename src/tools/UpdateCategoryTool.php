@@ -5,6 +5,7 @@ namespace samuelreichor\coPilot\tools;
 use Craft;
 use craft\elements\Category;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\AuditAction;
 use samuelreichor\coPilot\enums\SectionAccess;
 
 class UpdateCategoryTool implements ToolInterface
@@ -12,6 +13,16 @@ class UpdateCategoryTool implements ToolInterface
     public function getName(): string
     {
         return 'updateCategory';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Update Category';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Update;
     }
 
     public function getDescription(): string

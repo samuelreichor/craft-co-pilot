@@ -5,6 +5,7 @@ namespace samuelreichor\coPilot\tools;
 use Craft;
 use craft\elements\Entry;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\AuditAction;
 use samuelreichor\coPilot\services\TokenEstimator;
 
 class ReadEntriesTool implements ToolInterface
@@ -15,6 +16,16 @@ class ReadEntriesTool implements ToolInterface
     public function getName(): string
     {
         return 'readEntries';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Read Entries';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Read;
     }
 
     public function getDescription(): string

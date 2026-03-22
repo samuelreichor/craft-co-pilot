@@ -499,7 +499,7 @@ class AgentService extends Component
         $afterEvent->result = $result;
         $this->trigger(self::EVENT_AFTER_TOOL_CALL, $afterEvent);
 
-        $this->logToolCall($toolName, $arguments, $afterEvent->result ?? $result);
+        $this->logToolCall($toolName, $arguments, $afterEvent->result ?? $result, $tools[$toolName]->getAction()->value);
 
         return $afterEvent->result ?? $result;
     }
@@ -678,11 +678,11 @@ class AgentService extends Component
      * @param array<string, mixed> $params
      * @param array<string, mixed> $result
      */
-    private function logToolCall(string $toolName, array $params, array $result): void
+    private function logToolCall(string $toolName, array $params, array $result, string $action): void
     {
         try {
             $plugin = CoPilot::getInstance();
-            $plugin->auditService->log($toolName, $params, $result);
+            $plugin->auditService->log($toolName, $params, $result, $action);
         } catch (\Throwable $e) {
             Logger::error("Audit log failed: {$e->getMessage()}");
         }

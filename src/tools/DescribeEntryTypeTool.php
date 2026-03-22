@@ -3,12 +3,23 @@
 namespace samuelreichor\coPilot\tools;
 
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\AuditAction;
 
 class DescribeEntryTypeTool implements ToolInterface
 {
     public function getName(): string
     {
         return 'describeEntryType';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Describe Entry Type';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Read;
     }
 
     public function getDescription(): string

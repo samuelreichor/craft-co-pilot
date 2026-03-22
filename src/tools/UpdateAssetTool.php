@@ -5,6 +5,7 @@ namespace samuelreichor\coPilot\tools;
 use Craft;
 use craft\elements\Asset;
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\AuditAction;
 use samuelreichor\coPilot\enums\SectionAccess;
 
 class UpdateAssetTool implements ToolInterface
@@ -12,6 +13,16 @@ class UpdateAssetTool implements ToolInterface
     public function getName(): string
     {
         return 'updateAsset';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Update Asset';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Update;
     }
 
     public function getDescription(): string

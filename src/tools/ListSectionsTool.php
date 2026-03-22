@@ -3,12 +3,23 @@
 namespace samuelreichor\coPilot\tools;
 
 use samuelreichor\coPilot\CoPilot;
+use samuelreichor\coPilot\enums\AuditAction;
 
 class ListSectionsTool implements ToolInterface
 {
     public function getName(): string
     {
         return 'listSections';
+    }
+
+    public function getLabel(): string
+    {
+        return 'List Sections';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Read;
     }
 
     public function getDescription(): string

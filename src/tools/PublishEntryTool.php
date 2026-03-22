@@ -4,6 +4,7 @@ namespace samuelreichor\coPilot\tools;
 
 use Craft;
 use craft\elements\Entry;
+use samuelreichor\coPilot\enums\AuditAction;
 use samuelreichor\coPilot\enums\ElementUpdateBehavior;
 
 class PublishEntryTool extends AbstractEntryUpdateTool
@@ -11,6 +12,16 @@ class PublishEntryTool extends AbstractEntryUpdateTool
     public function getName(): string
     {
         return 'publishEntry';
+    }
+
+    public function getLabel(): string
+    {
+        return 'Publish Entry';
+    }
+
+    public function getAction(): AuditAction
+    {
+        return AuditAction::Update;
     }
 
     public function getDescription(): string
