@@ -17,7 +17,6 @@ const props = withDefaults(defineProps<ChatPanelProps & {
 }>(), {
   contextId: null,
   initialConversationId: null,
-  compact: false,
   model: '',
   siteHandle: null,
   models: () => [],
@@ -88,7 +87,6 @@ defineExpose({
     <MessageList
       :messages="chat.messages.value"
       :is-loading="chat.isLoading.value"
-      :compact="compact"
       :is-streaming="chat.isStreaming.value"
       :streaming-text="chat.streamingText.value"
       :live-tool-calls="chat.liveToolCalls.value"
@@ -99,7 +97,6 @@ defineExpose({
       :is-loading="chat.isLoading.value"
       :is-streaming="chat.isStreaming.value"
       :attachments="chat.attachments.value"
-      :compact="compact"
       :models="models"
       :current-model="model"
       :execution-mode="executionMode"

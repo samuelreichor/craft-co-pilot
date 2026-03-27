@@ -43,7 +43,6 @@ export interface ChatPanelProps {
   contextType: 'global' | 'entry';
   contextId?: number | null;
   initialConversationId?: number | null;
-  compact?: boolean;
 }
 
 /** SSE event types from the backend */

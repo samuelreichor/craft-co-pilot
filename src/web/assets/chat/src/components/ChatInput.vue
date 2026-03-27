@@ -13,7 +13,6 @@ const props = defineProps<{
   isLoading: boolean;
   isStreaming?: boolean;
   attachments: Attachment[];
-  compact?: boolean;
   models?: string[];
   currentModel?: string;
   executionMode?: string;
@@ -366,7 +365,7 @@ defineExpose({ focus });
       ref="textarea"
       class="co-pilot-input__textarea"
       v-model="text"
-      :placeholder="readonly ? 'Read-only — you cannot edit this conversation' : (pendingCommand?.param?.type === 'text' ? pendingCommand.param.label + '...' : (compact ? 'Ask about this entry...' : 'Ask CoPilot...'))"
+      :placeholder="readonly ? 'Read-only — you cannot edit this conversation' : (pendingCommand?.param?.type === 'text' ? pendingCommand.param.label + '...' : 'Ask CoPilot...')"
       :disabled="readonly"
       rows="1"
       @keydown="handleKeydown"
@@ -374,7 +373,7 @@ defineExpose({ focus });
     />
     <div class="co-pilot-input__toolbar">
       <div class="co-pilot-input__toolbar-left">
-        <div v-if="!compact" ref="addWrap" class="co-pilot-input__add-wrap">
+        <div ref="addWrap" class="co-pilot-input__add-wrap">
           <button
             type="button"
             class="co-pilot-input__add-btn btn"
@@ -421,7 +420,7 @@ defineExpose({ focus });
             </button>
           </div>
         </div>
-        <div v-if="!compact && canChangeExecutionMode !== false" class="co-pilot-input__mode-select select">
+        <div v-if="canChangeExecutionMode !== false" class="co-pilot-input__mode-select select">
           <select
             :value="executionMode || 'supervised'"
             @change="
@@ -438,7 +437,7 @@ defineExpose({ focus });
       </div>
       <div class="co-pilot-input__toolbar-right">
         <div
-          v-if="!compact && canChangeModel !== false && props.models && props.models.length > 0"
+          v-if="canChangeModel !== false && props.models && props.models.length > 0"
           class="co-pilot-input__model-select select"
         >
           <select

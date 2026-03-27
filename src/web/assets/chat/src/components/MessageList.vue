@@ -8,7 +8,6 @@ import WelcomeScreen from './WelcomeScreen.vue';
 const props = defineProps<{
   messages: UIMessage[];
   isLoading: boolean;
-  compact?: boolean;
   isStreaming?: boolean;
   streamingText?: string;
   liveToolCalls?: LiveToolCall[];
@@ -39,7 +38,6 @@ onMounted(scrollToBottom);
   <div ref="list" class="co-pilot-messages">
     <WelcomeScreen
       v-if="messages.length === 0 && !isLoading && !isStreaming"
-      :compact="compact"
       @suggest="$emit('suggest', $event)"
     />
     <ChatMessage

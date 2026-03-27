@@ -1,8 +1,4 @@
 <script setup lang="ts">
-defineProps<{
-  compact?: boolean;
-}>();
-
 const emit = defineEmits<{
   suggest: [text: string];
 }>();
@@ -18,7 +14,7 @@ const suggestions = [
 <template>
   <div class="co-pilot-welcome">
     <h2>How can I help you today?</h2>
-    <div v-if="!compact" class="co-pilot-welcome__suggestions">
+    <div class="co-pilot-welcome__suggestions">
       <button
         v-for="suggestion in suggestions"
         :key="suggestion"
