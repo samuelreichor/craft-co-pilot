@@ -78,11 +78,11 @@ class Settings extends Model
 
     // Agent behavior
     public string $agentExecutionMode = 'supervised';
-    public int $maxAgentIterations = 20;
+    public int $maxAgentIterations = 50;
     public int $defaultSerializationDepth = 3;
     public int $maxSerializationDepth = 4;
-    public int $maxContextTokens = 100000;
-    public int $defaultSearchLimit = 20;
+    public int $maxContextTokens = 200000;
+    public int $defaultSearchLimit = 50;
 
     // Element persistence behavior
     public string $elementUpdateBehavior = 'provisionalDraft';
@@ -100,11 +100,11 @@ class Settings extends Model
             [['defaultProvider', 'pluginName'], 'required'],
             ['pluginName', 'string', 'max' => 50],
             ['defaultProvider', 'string'],
-            ['maxAgentIterations', 'integer', 'min' => 1, 'max' => 50],
+            ['maxAgentIterations', 'integer', 'min' => 1, 'max' => 200],
             ['defaultSerializationDepth', 'integer', 'min' => 1, 'max' => 10],
             ['maxSerializationDepth', 'integer', 'min' => 1, 'max' => 10],
-            ['maxContextTokens', 'integer', 'min' => 1000, 'max' => 128000],
-            ['defaultSearchLimit', 'integer', 'min' => 1, 'max' => 100],
+            ['maxContextTokens', 'integer', 'min' => 1000, 'max' => 1000000],
+            ['defaultSearchLimit', 'integer', 'min' => 1, 'max' => 200],
             ['auditLogRetentionDays', 'integer', 'min' => 1, 'max' => 365],
             [['webSearchEnabled', 'debug'], 'boolean'],
             ['agentExecutionMode', 'in', 'range' => array_column(AgentExecutionMode::cases(), 'value')],
