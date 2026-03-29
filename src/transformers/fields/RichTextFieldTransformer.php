@@ -2,11 +2,11 @@
 
 namespace samuelreichor\coPilot\transformers\fields;
 
+use craft\base\Element;
 use craft\base\FieldInterface;
-use craft\elements\Entry;
 
 /**
- * Handles CKEditor rich text fields via class name matching.
+ * Handles CKEditor and Redactor rich text fields via class name matching.
  */
 class RichTextFieldTransformer implements FieldTransformerInterface
 {
@@ -17,7 +17,9 @@ class RichTextFieldTransformer implements FieldTransformerInterface
 
     public function matchesField(FieldInterface $field): ?bool
     {
-        if (str_contains(get_class($field), 'ckeditor')) {
+        $class = get_class($field);
+
+        if (str_contains($class, 'ckeditor') || str_contains($class, 'redactor')) {
             return true;
         }
 
@@ -41,7 +43,7 @@ class RichTextFieldTransformer implements FieldTransformerInterface
         return $value;
     }
 
-    public function normalizeValue(FieldInterface $field, mixed $value, ?Entry $entry = null): mixed
+    public function normalizeValue(FieldInterface $field, mixed $value, ?Element $element = null): mixed
     {
         return null;
     }

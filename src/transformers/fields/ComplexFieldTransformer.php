@@ -3,6 +3,7 @@
 namespace samuelreichor\coPilot\transformers\fields;
 
 use Craft;
+use craft\base\Element;
 use craft\base\FieldInterface;
 use craft\elements\ContentBlock as ContentBlockElement;
 use craft\elements\Entry;
@@ -48,7 +49,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
             $field instanceof MoneyField => $this->describeMoney($field, $fieldInfo),
             $field instanceof JsonField => $this->describeWithHint($fieldInfo, 'JSON object, array, or null', 'Send any valid JSON value. To clear, set to null.'),
             $field instanceof MatrixField => $this->describeMatrix($field, $fieldInfo),
-            $field instanceof ContentBlockField => $this->describeWithHint($fieldInfo, 'object with sub-field handles as keys', 'Send {"subFieldHandle": value, ...}. To clear all sub-fields at once, set this field to null. Never include title or slug keys.'),
+            $field instanceof ContentBlockField => $this->describeWithHint($fieldInfo, 'object with sub-field handles as keys', 'Only include sub-fields you want to change — omitted sub-fields keep their current values. Example: {"assets": []} clears only assets. To clear ALL sub-fields, set the entire field to null. Never include title or slug keys.'),
             default => $fieldInfo,
         };
     }
@@ -66,20 +67,20 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         };
     }
 
-    public function normalizeValue(FieldInterface $field, mixed $value, ?Entry $entry = null): mixed
+    public function normalizeValue(FieldInterface $field, mixed $value, ?Element $element = null): mixed
     {
         return match (true) {
             $field instanceof ContentBlockField && $value === null => $this->buildEmptyContentBlockFields($field),
             $field instanceof ContentBlockField && is_array($value) && empty($value) => $this->buildEmptyContentBlockFields($field),
-            $field instanceof ContentBlockField && is_array($value) => $this->normalizeContentBlockValue($value, $field, $entry),
-            $field instanceof LinkField && (is_int($value) || (is_string($value) && ctype_digit($value))) => $this->normalizeLinkValue(['type' => 'entry', 'value' => (int) $value], $entry),
-            $field instanceof LinkField && is_array($value) => $this->normalizeLinkValue($value, $entry),
+            $field instanceof ContentBlockField && is_array($value) => $this->normalizeContentBlockValue($value, $field, $element),
+            $field instanceof LinkField && (is_int($value) || (is_string($value) && ctype_digit($value))) => $this->normalizeLinkValue(['type' => 'entry', 'value' => (int) $value], $element),
+            $field instanceof LinkField && is_array($value) => $this->normalizeLinkValue($value, $element),
             $field instanceof MoneyField && is_array($value) && isset($value['amount']) => (int) $value['amount'],
             $field instanceof MoneyField && ($value === 0 || $value === '0') => 0,
             $field instanceof TableField && $value === null => [],
             $field instanceof JsonField && is_array($value) && empty($value) => [],
             $field instanceof JsonField && is_string($value) => $this->normalizeJsonString($value),
-            $field instanceof MatrixField && is_array($value) => $this->normalizeMatrixFieldInput($field, $value, $entry),
+            $field instanceof MatrixField && is_array($value) => $this->normalizeMatrixFieldInput($field, $value, $element),
             default => null,
         };
     }
@@ -306,19 +307,24 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @param array<string, mixed> $value
      * @return array<string, mixed>
      */
-    private function normalizeContentBlockValue(array $value, ContentBlockField $contentBlockField, ?Entry $entry = null): array
+    /**
+     * @param array<string, mixed> $value
+     * @return array<string, mixed>
+     */
+    private function normalizeContentBlockValue(array $value, ContentBlockField $contentBlockField, ?Element $element = null): array
     {
         if (isset($value['fields']) && is_array($value['fields'])) {
             unset($value['fields']['title'], $value['fields']['slug']);
-            $value['fields'] = $this->normalizeContentBlockSubFields($value['fields'], $contentBlockField, $entry);
-
-            return $value;
+            $fields = $value['fields'];
+        } else {
+            $nativeAttributes = ['title', 'slug'];
+            $fields = array_diff_key($value, array_flip($nativeAttributes));
         }
 
-        $nativeAttributes = ['title', 'slug'];
-        $fields = array_diff_key($value, array_flip($nativeAttributes));
-        $fields = $this->normalizeContentBlockSubFields($fields, $contentBlockField, $entry);
+        $fields = $this->normalizeContentBlockSubFields($fields, $contentBlockField, $element);
 
+        // Craft's ContentBlock supports partial updates natively:
+        // it loads the existing ContentBlock and only sets fields present in the array.
         return ['fields' => $fields];
     }
 
@@ -326,8 +332,24 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @param array<string, mixed> $fields
      * @return array<string, mixed>
      */
-    private function normalizeContentBlockSubFields(array $fields, ContentBlockField $contentBlockField, ?Entry $entry = null): array
+    private function normalizeContentBlockSubFields(array $fields, ContentBlockField $contentBlockField, ?Element $element = null): array
     {
+        // Resolve the existing ContentBlock element so sub-field normalizers
+        // (e.g. Matrix) get the correct context for merging with existing data.
+        $contentBlock = null;
+        if ($element !== null) {
+            $handle = CoPilot::getInstance()->fieldNormalizer->getCurrentFieldHandle() ?? $contentBlockField->handle;
+
+            try {
+                $existing = $element->getFieldValue($handle);
+                if ($existing instanceof ContentBlockElement) {
+                    $contentBlock = $existing;
+                }
+            } catch (\Throwable) {
+                // Fall through
+            }
+        }
+
         $fieldLayout = $contentBlockField->getFieldLayout();
         $registry = CoPilot::getInstance()->transformerRegistry;
 
@@ -348,7 +370,9 @@ class ComplexFieldTransformer implements FieldTransformerInterface
                 continue;
             }
 
-            $normalized = $transformer->normalizeValue($field, $value, $entry);
+            // Pass the ContentBlock as context so nested normalizers
+            // can find existing field data (e.g. Matrix blocks).
+            $normalized = $transformer->normalizeValue($field, $value, $contentBlock ?? $element);
 
             if ($normalized !== null) {
                 $fields[$handle] = $normalized;
@@ -362,7 +386,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @param array<string, mixed> $value
      * @return array<string, mixed>
      */
-    private function normalizeLinkValue(array $value, ?Entry $entry = null): array
+    private function normalizeLinkValue(array $value, ?Element $element = null): array
     {
         $keyMappings = [
             'url' => 'url',
@@ -393,7 +417,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         }
 
         if (isset($value['value'])) {
-            $value['value'] = $this->prefixLinkValue((string) $value['type'], $value['value'], $entry);
+            $value['value'] = $this->prefixLinkValue((string) $value['type'], $value['value'], $element);
         }
 
         return $value;
@@ -415,12 +439,17 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @param array<int|string, mixed> $value
      * @return array<string, mixed>
      */
-    private function normalizeMatrixFieldInput(MatrixField $field, array $value, ?Entry $entry): array
+    private function normalizeMatrixFieldInput(MatrixField $field, array $value, ?Element $element): array
     {
-        // Use the AI-provided handle (may be a custom layout handle) for Matrix merging
-        $handle = CoPilot::getInstance()->fieldNormalizer->getCurrentFieldHandle() ?? $field->handle;
+        // For top-level Matrix fields on root entries, use the layout handle (supports custom handles).
+        // For nested elements (Matrix blocks, ContentBlocks), use the field's own handle since
+        // getCurrentFieldHandle() still holds the root field's handle.
+        $isRootEntry = $element instanceof Entry && $element->getOwnerId() === null;
+        $handle = $isRootEntry
+            ? (CoPilot::getInstance()->fieldNormalizer->getCurrentFieldHandle() ?? $field->handle)
+            : $field->handle;
 
-        return $this->normalizeMatrixValue($value, $entry, $handle, $field);
+        return $this->normalizeMatrixValue($value, $element, $handle, $field);
     }
 
     private function detectLinkType(mixed $value): string
@@ -446,14 +475,14 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         return 'url';
     }
 
-    private function prefixLinkValue(string $type, mixed $value, ?Entry $entry = null): mixed
+    private function prefixLinkValue(string $type, mixed $value, ?Element $element = null): mixed
     {
         // Convert numeric element IDs to Craft reference tags for entry/asset/category links.
         // This ensures the correct siteId is used (from the entry being edited) instead of
         // relying on Craft's getCurrentSite() which may differ in API/CLI contexts.
         $elementTypes = ['entry', 'asset', 'category'];
         if (in_array($type, $elementTypes, true) && (is_int($value) || (is_string($value) && ctype_digit($value)))) {
-            $siteId = $entry?->siteId ?? Craft::$app->getSites()->getCurrentSite()->id;
+            $siteId = $element?->siteId ?? Craft::$app->getSites()->getCurrentSite()->id;
 
             return sprintf('{%s:%s@%s:url}', $type, $value, $siteId);
         }
@@ -480,7 +509,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @param array<int|string, mixed> $value
      * @return array<string, mixed>
      */
-    private function normalizeMatrixValue(array $value, ?Entry $entry, string $fieldHandle, ?MatrixField $matrixField = null): array
+    private function normalizeMatrixValue(array $value, ?Element $element, string $fieldHandle, ?MatrixField $matrixField = null): array
     {
         if (isset($value['entries'])) {
             return $value;
@@ -512,8 +541,8 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         // Try to match blocks without _blockId to existing blocks by type+position.
         // This is critical for cross-site updates where the agent sends translated
         // content without preserving block IDs.
-        if ($entry !== null && !$replaceMode) {
-            $blocks = $this->matchBlocksByPosition($blocks, $entry, $fieldHandle);
+        if ($element !== null && !$replaceMode) {
+            $blocks = $this->matchBlocksByPosition($blocks, $element, $fieldHandle);
         }
 
         $newEntries = [];
@@ -524,7 +553,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
 
         foreach ($blocks as $block) {
             $blockId = $block['_blockId'] ?? null;
-            $block = $this->normalizeMatrixBlock($block, $matrixField, $entry);
+            $block = $this->normalizeMatrixBlock($block, $matrixField, $element);
 
             if ($blockId !== null) {
                 $key = (string) $blockId;
@@ -537,14 +566,14 @@ class ComplexFieldTransformer implements FieldTransformerInterface
             }
         }
 
-        if ($replaceMode || $entry === null) {
+        if ($replaceMode || $element === null) {
             return [
                 'entries' => array_merge($existingEntries, $newEntries),
                 'sortOrder' => array_merge($existingUpdateIds, $newSortOrder),
             ];
         }
 
-        return $this->mergeWithExistingBlocks($entry, $fieldHandle, $newEntries, $newSortOrder, $existingEntries, $existingUpdateIds);
+        return $this->mergeWithExistingBlocks($element, $fieldHandle, $newEntries, $newSortOrder, $existingEntries, $existingUpdateIds);
     }
 
     /**
@@ -556,10 +585,26 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @param array<string, mixed> $block
      * @return array<string, mixed>
      */
-    private function normalizeMatrixBlock(array $block, ?MatrixField $matrixField = null, ?Entry $entry = null): array
+    private function normalizeMatrixBlock(array $block, ?MatrixField $matrixField = null, ?Element $element = null): array
     {
-        if (!isset($block['type']) && isset($block['_blockType'])) {
-            $block['type'] = $block['_blockType'];
+        if (!isset($block['type'])) {
+            $type = $block['_blockType'] ?? $block['_type'] ?? null;
+            if ($type !== null) {
+                $block['type'] = $type;
+            }
+        }
+
+        // Resolve the actual block element for nested field normalization context.
+        // This allows deeply nested Matrix/ContentBlock fields to find their existing data.
+        $blockElement = null;
+        $blockId = $block['_blockId'] ?? null;
+        if ($blockId !== null) {
+            $blockElement = Entry::find()->id($blockId)->status(null)->drafts(null)->site('*')->one();
+
+            // Infer block type from existing element when the AI doesn't send it
+            if ($blockElement !== null && !isset($block['type']) && !isset($block['_blockType'])) {
+                $block['type'] = $blockElement->getType()->handle;
+            }
         }
 
         foreach (array_keys($block) as $key) {
@@ -587,7 +632,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
             }
 
             if ($matrixField !== null && isset($block['type'])) {
-                $block['fields'] = $this->normalizeBlockSubFields($block['fields'], $matrixField, $block['type'], $entry);
+                $block['fields'] = $this->normalizeBlockSubFields($block['fields'], $matrixField, $block['type'], $blockElement ?? $element);
             } else {
                 $block['fields'] = $this->normalizeNestedFieldsByPattern($block['fields']);
             }
@@ -600,7 +645,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @param array<string, mixed> $fields
      * @return array<string, mixed>
      */
-    private function normalizeBlockSubFields(array $fields, MatrixField $matrixField, string $blockTypeHandle, ?Entry $entry = null): array
+    private function normalizeBlockSubFields(array $fields, MatrixField $matrixField, string $blockTypeHandle, ?Element $element = null): array
     {
         $fieldLayout = $this->resolveBlockFieldLayout($matrixField, $blockTypeHandle);
 
@@ -627,7 +672,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
                 continue;
             }
 
-            $normalized = $transformer->normalizeValue($field, $value, $entry);
+            $normalized = $transformer->normalizeValue($field, $value, $element);
 
             if ($normalized !== null) {
                 $fields[$handle] = $normalized;
@@ -639,9 +684,9 @@ class ComplexFieldTransformer implements FieldTransformerInterface
 
     private function resolveBlockFieldLayout(MatrixField $matrixField, string $blockTypeHandle): ?\craft\models\FieldLayout
     {
-        foreach ($matrixField->getEntryTypes() as $entryType) {
-            if ($entryType->handle === $blockTypeHandle) {
-                return $entryType->getFieldLayout();
+        foreach ($matrixField->getEntryTypes() as $elementType) {
+            if ($elementType->handle === $blockTypeHandle) {
+                return $elementType->getFieldLayout();
             }
         }
 
@@ -689,7 +734,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @param array<int, array<string, mixed>> $blocks
      * @return array<int, array<string, mixed>>
      */
-    private function matchBlocksByPosition(array $blocks, Entry $entry, string $fieldHandle): array
+    private function matchBlocksByPosition(array $blocks, Element $element, string $fieldHandle): array
     {
         // Skip if all blocks already have _blockId
         $hasUnidentified = false;
@@ -705,7 +750,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         }
 
         try {
-            $existingBlocks = $entry->getFieldValue($fieldHandle)->all();
+            $existingBlocks = $element->getFieldValue($fieldHandle)->all();
         } catch (\Throwable) {
             return $blocks;
         }
@@ -773,7 +818,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
      * @return array<string, mixed>
      */
     private function mergeWithExistingBlocks(
-        Entry $entry,
+        Element $element,
         string $fieldHandle,
         array $newEntries,
         array $newSortOrder,
@@ -783,7 +828,7 @@ class ComplexFieldTransformer implements FieldTransformerInterface
         $sortOrder = [];
 
         try {
-            $existingBlocks = $entry->getFieldValue($fieldHandle)->all();
+            $existingBlocks = $element->getFieldValue($fieldHandle)->all();
         } catch (\Throwable) {
             $existingBlocks = [];
         }

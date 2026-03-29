@@ -2,8 +2,8 @@
 
 namespace samuelreichor\coPilot\transformers\fields;
 
+use craft\base\Element;
 use craft\base\FieldInterface;
-use craft\elements\Entry;
 
 /**
  * Handles field type description, serialization, and normalization for the AI agent.
@@ -43,5 +43,5 @@ interface FieldTransformerInterface
      * Normalizes an AI-provided value back into Craft's expected format.
      * Return null if no normalization is needed.
      */
-    public function normalizeValue(FieldInterface $field, mixed $value, ?Entry $entry = null): mixed;
+    public function normalizeValue(FieldInterface $field, mixed $value, ?Element $element = null): mixed;
 }

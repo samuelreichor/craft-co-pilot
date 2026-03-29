@@ -3,6 +3,7 @@
 namespace samuelreichor\coPilot\transformers\fields;
 
 use Craft;
+use craft\base\Element;
 use craft\base\FieldInterface;
 use craft\elements\Address;
 use craft\elements\Asset;
@@ -68,7 +69,7 @@ class RelationalFieldTransformer implements FieldTransformerInterface
         };
     }
 
-    public function normalizeValue(FieldInterface $field, mixed $value, ?Entry $entry = null): mixed
+    public function normalizeValue(FieldInterface $field, mixed $value, ?Element $element = null): mixed
     {
         return match (true) {
             $field instanceof AddressesField && is_array($value) => $this->normalizeAddressesValue($value),
@@ -232,6 +233,7 @@ class RelationalFieldTransformer implements FieldTransformerInterface
             'addressLine2' => $addr->addressLine2,
             'locality' => $addr->locality,
             'postalCode' => $addr->postalCode,
+            'administrativeArea' => $addr->administrativeArea,
             'countryCode' => $addr->countryCode,
         ], $value->all());
     }
@@ -374,6 +376,10 @@ class RelationalFieldTransformer implements FieldTransformerInterface
 
         $fields[] = ['attribute' => 'countryCode', 'required' => true];
         $fields[] = ['attribute' => 'addressLine1', 'required' => true];
+        $fields[] = ['attribute' => 'addressLine2'];
+        $fields[] = ['attribute' => 'locality', 'hint' => 'City'];
+        $fields[] = ['attribute' => 'postalCode'];
+        $fields[] = ['attribute' => 'administrativeArea', 'hint' => 'State/Province'];
 
         $nativeFieldTypes = [
             \craft\fieldlayoutelements\addresses\LabelField::class => 'title',

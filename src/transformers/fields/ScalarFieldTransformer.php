@@ -2,8 +2,8 @@
 
 namespace samuelreichor\coPilot\transformers\fields;
 
+use craft\base\Element;
 use craft\base\FieldInterface;
-use craft\elements\Entry;
 use craft\fields\Color as ColorField;
 use craft\fields\Country as CountryField;
 use craft\fields\data\ColorData;
@@ -73,7 +73,7 @@ class ScalarFieldTransformer implements FieldTransformerInterface
         };
     }
 
-    public function normalizeValue(FieldInterface $field, mixed $value, ?Entry $entry = null): mixed
+    public function normalizeValue(FieldInterface $field, mixed $value, ?Element $element = null): mixed
     {
         return match (true) {
             $field instanceof CountryField && is_array($value) => $this->normalizeCountryValue($value),

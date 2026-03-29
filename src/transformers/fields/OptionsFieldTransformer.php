@@ -2,8 +2,8 @@
 
 namespace samuelreichor\coPilot\transformers\fields;
 
+use craft\base\Element;
 use craft\base\FieldInterface;
-use craft\elements\Entry;
 use craft\fields\BaseOptionsField;
 use craft\fields\Checkboxes;
 use craft\fields\data\MultiOptionsFieldData;
@@ -61,7 +61,7 @@ class OptionsFieldTransformer implements FieldTransformerInterface
         return $value;
     }
 
-    public function normalizeValue(FieldInterface $field, mixed $value, ?Entry $entry = null): mixed
+    public function normalizeValue(FieldInterface $field, mixed $value, ?Element $element = null): mixed
     {
         if (!$field instanceof BaseOptionsField) {
             return null;

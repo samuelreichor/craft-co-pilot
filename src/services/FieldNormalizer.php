@@ -4,6 +4,7 @@ namespace samuelreichor\coPilot\services;
 
 use Craft;
 use craft\base\Component;
+use craft\base\Element;
 use craft\base\FieldInterface;
 use craft\elements\Entry;
 use samuelreichor\coPilot\CoPilot;
@@ -19,12 +20,12 @@ class FieldNormalizer extends Component
      * (which may differ from the field's original handle) for Matrix block merging.
      */
     private ?string $currentFieldHandle = null;
-    public function normalize(string $fieldHandle, mixed $value, ?Entry $entry = null): mixed
+    public function normalize(string $fieldHandle, mixed $value, Entry|Element|null $element = null): mixed
     {
         $value = $this->unescapeJsonSlashes($value);
         $value = $this->stripSerializationMarkers($value);
 
-        $field = $this->resolveField($fieldHandle, $entry);
+        $field = $this->resolveField($fieldHandle, $element instanceof Entry ? $element : null);
 
         if ($field === null) {
             return $value;
@@ -39,7 +40,7 @@ class FieldNormalizer extends Component
         $this->currentFieldHandle = $fieldHandle;
 
         try {
-            $normalized = $transformer->normalizeValue($field, $value, $entry);
+            $normalized = $transformer->normalizeValue($field, $value, $element);
 
             return $normalized ?? $value;
         } finally {
