@@ -16,6 +16,7 @@ use samuelreichor\coPilot\transformers\elements\ElementTransformerInterface;
 use samuelreichor\coPilot\transformers\elements\EntryTransformer;
 use samuelreichor\coPilot\transformers\fields\ComplexFieldTransformer;
 use samuelreichor\coPilot\transformers\fields\FieldTransformerInterface;
+use samuelreichor\coPilot\transformers\fields\FormieFieldTransformer;
 use samuelreichor\coPilot\transformers\fields\LlmifyFieldTransformer;
 use samuelreichor\coPilot\transformers\fields\OptionsFieldTransformer;
 use samuelreichor\coPilot\transformers\fields\RelationalFieldTransformer;
@@ -159,6 +160,10 @@ class TransformerRegistry extends Component
 
         if (PluginHelper::isPluginInstalledAndEnabled('llmify')) {
             $transformers[] = new LlmifyFieldTransformer();
+        }
+
+        if (PluginHelper::isPluginInstalledAndEnabled('formie')) {
+            $transformers[] = new FormieFieldTransformer();
         }
 
         $transformers[] = new ScalarFieldTransformer();

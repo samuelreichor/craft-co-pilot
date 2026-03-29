@@ -12,6 +12,7 @@ use samuelreichor\coPilot\enums\MessageRole;
 use samuelreichor\coPilot\events\RegisterToolsEvent;
 use samuelreichor\coPilot\events\ToolCallEvent;
 use samuelreichor\coPilot\helpers\Logger;
+use samuelreichor\coPilot\helpers\PluginHelper;
 use samuelreichor\coPilot\models\Message;
 use samuelreichor\coPilot\models\Settings;
 use samuelreichor\coPilot\models\StreamChunk;
@@ -30,6 +31,7 @@ use samuelreichor\coPilot\tools\ReadEntryTool;
 use samuelreichor\coPilot\tools\SearchAssetsTool;
 use samuelreichor\coPilot\tools\SearchCategoriesTool;
 use samuelreichor\coPilot\tools\SearchEntriesTool;
+use samuelreichor\coPilot\tools\SearchFormieFormsTool;
 use samuelreichor\coPilot\tools\SearchTagsTool;
 use samuelreichor\coPilot\tools\SearchUsersTool;
 use samuelreichor\coPilot\tools\ToolInterface;
@@ -438,6 +440,10 @@ class AgentService extends Component
             new DescribeVolumeTool(),
             new ReadAssetTool(),
         ];
+
+        if (PluginHelper::isPluginInstalledAndEnabled('formie')) {
+            $event->tools[] = new SearchFormieFormsTool();
+        }
 
         $this->trigger(self::EVENT_REGISTER_TOOLS, $event);
 
