@@ -40,6 +40,7 @@ class EntryTransformer implements ElementTransformerInterface
         }
 
         $data = [
+            '_type' => 'entry',
             'id' => $element->id,
             'title' => $element->title ?: $element->getSection()?->name,
             'slug' => $element->slug,
@@ -49,7 +50,6 @@ class EntryTransformer implements ElementTransformerInterface
             'dateCreated' => $element->dateCreated?->format('c'),
             'dateUpdated' => $element->dateUpdated?->format('c'),
             'url' => $element->url,
-            'fields' => [],
         ];
 
         $author = $element->getAuthor();
@@ -57,30 +57,7 @@ class EntryTransformer implements ElementTransformerInterface
             $data['author'] = $author->fullName ?? $author->username;
         }
 
-        $fieldLayout = $element->getFieldLayout();
-        if (!$fieldLayout) {
-            return $data;
-        }
-
-        $registry = CoPilot::getInstance()->transformerRegistry;
-
-        foreach ($registry->resolveFieldLayoutFields($fieldLayout) as $resolved) {
-            $handle = $resolved['handle'];
-            $field = $resolved['field'];
-
-            if (!in_array($handle, $event->fields, true)) {
-                continue;
-            }
-
-            $value = $element->getFieldValue($handle);
-            $transformer = $registry->getTransformerForField($field);
-
-            if ($transformer !== null) {
-                $data['fields'][$handle] = $transformer->serializeValue($field, $value, $depth);
-            } else {
-                $data['fields'][$handle] = $this->serializeFallback($value);
-            }
-        }
+        $data['fields'] = $this->serializeCustomFields($element, $depth, $event->fields);
 
         return $data;
     }

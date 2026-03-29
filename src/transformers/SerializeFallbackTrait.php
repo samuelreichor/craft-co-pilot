@@ -2,11 +2,51 @@
 
 namespace samuelreichor\coPilot\transformers;
 
+use craft\base\ElementInterface;
+use samuelreichor\coPilot\CoPilot;
+
 /**
- * Provides a fallback serializer for field values without a dedicated transformer.
+ * Provides shared serialization helpers for element transformers.
  */
 trait SerializeFallbackTrait
 {
+    /**
+     * Serializes all custom fields from an element's field layout.
+     *
+     * @param string[]|null $fieldHandles Optional filter — only serialize these handles
+     * @return array<string, mixed>
+     */
+    private function serializeCustomFields(ElementInterface $element, int $depth, ?array $fieldHandles = null): array
+    {
+        $fieldLayout = $element->getFieldLayout();
+        if (!$fieldLayout) {
+            return [];
+        }
+
+        $registry = CoPilot::getInstance()->transformerRegistry;
+        $fields = [];
+
+        foreach ($registry->resolveFieldLayoutFields($fieldLayout) as $resolved) {
+            $handle = $resolved['handle'];
+            $field = $resolved['field'];
+
+            if ($fieldHandles !== null && !in_array($handle, $fieldHandles, true)) {
+                continue;
+            }
+
+            $value = $element->getFieldValue($handle);
+            $transformer = $registry->getTransformerForField($field);
+
+            if ($transformer !== null) {
+                $fields[$handle] = $transformer->serializeValue($field, $value, $depth);
+            } else {
+                $fields[$handle] = $this->serializeFallback($value);
+            }
+        }
+
+        return $fields;
+    }
+
     private function serializeFallback(mixed $value): mixed
     {
         if (is_object($value)) {
