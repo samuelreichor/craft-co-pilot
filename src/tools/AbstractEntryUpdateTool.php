@@ -3,13 +3,23 @@
 namespace samuelreichor\coPilot\tools;
 
 use Craft;
+use craft\base\Element;
+use craft\base\ElementInterface;
+use craft\elements\Address;
+use craft\elements\ContentBlock;
+use craft\elements\db\ElementQuery;
 use craft\elements\Entry;
+use craft\elements\User;
+use craft\enums\PropagationMethod;
+use craft\errors\UnsupportedSiteException;
 use samuelreichor\coPilot\CoPilot;
 use samuelreichor\coPilot\enums\ElementUpdateBehavior;
 use samuelreichor\coPilot\helpers\Logger;
 
 abstract class AbstractEntryUpdateTool implements ToolInterface
 {
+    protected const NATIVE_FIELDS = ['title', 'slug', 'enabled', 'postDate', 'expiryDate'];
+
     /**
      * Core update logic shared by UpdateEntryTool and PublishEntryTool.
      *
@@ -22,139 +32,141 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
 
         $guard = $plugin->permissionGuard->canWriteEntry($entryId);
         if (!$guard['allowed']) {
-            return [
-                'error' => $guard['reason'],
-                'retryHint' => null,
-            ];
+            return ['error' => $guard['reason'], 'retryHint' => null];
         }
 
         $entry = $this->resolveEntry($entryId, $siteHandle);
         if (is_array($entry)) {
-            return $entry; // error response
+            return $entry;
         }
 
         unset($fields['_type']);
 
-        $diff = [];
+        // 1. Capture old values before any modifications
+        $diff = $this->buildDiff($entry, $fields);
+
+        // 2. Resolve target entry (draft or original)
+        [$targetEntry, $behaviorMessage] = $this->resolveTarget($entry, $plugin, $behaviorOverride);
+        if (is_array($targetEntry)) {
+            return $targetEntry; // error response
+        }
+
+        // 3. Apply fields — normalize against original entry, write to target
+        $skippedFields = $this->applyFields($targetEntry, $entry, $fields);
+
+        // 4. Update diff with normalized values
+        foreach ($fields as $fieldHandle => $value) {
+            if (!in_array($fieldHandle, self::NATIVE_FIELDS, true)) {
+                $diff[$fieldHandle]['new'] = CoPilot::getInstance()->fieldNormalizer->normalize($fieldHandle, $value, $entry);
+            }
+        }
+
+        // 5. Save
+        return $this->saveAndBuildResult($targetEntry, $entry, $siteHandle, $diff, $skippedFields, $behaviorMessage, $fields);
+    }
+
+    /**
+     * Resolves the target entry for saving (draft or original).
+     *
+     * @return array{0: Entry|array<string, mixed>, 1: string}
+     */
+    private function resolveTarget(Entry $entry, CoPilot $plugin, ?ElementUpdateBehavior $behaviorOverride): array
+    {
+        $updateBehavior = $behaviorOverride
+            ?? ElementUpdateBehavior::tryFrom($plugin->getSettings()->elementUpdateBehavior)
+            ?? ElementUpdateBehavior::ProvisionalDraft;
+
+        if ($updateBehavior === ElementUpdateBehavior::DirectSave || $entry->getIsDraft()) {
+            $message = $entry->getIsDraft() ? 'Draft entry updated directly.' : 'Entry updated successfully.';
+
+            return [$entry, $message];
+        }
+
+        $user = Craft::$app->getUser()->getIdentity();
+        if (!$user) {
+            return [['error' => 'Access denied – no authenticated user.', 'retryHint' => null], ''];
+        }
+
+        $targetEntry = $this->createOrResolveDraft($entry, $user, $updateBehavior);
+
+        $message = match ($updateBehavior) {
+            ElementUpdateBehavior::Draft => 'Entry changes saved as a new draft.',
+            ElementUpdateBehavior::ProvisionalDraft => 'Entry changes saved as a provisional draft (unsaved changes visible in the control panel).',
+        };
+
+        return [$targetEntry, $message];
+    }
+
+    /**
+     * Applies field values to the target entry.
+     * Uses the original entry as normalization context for ContentBlock/Matrix merging.
+     *
+     * @param array<string, mixed> $fields
+     * @return array<string, string> Skipped fields with error messages
+     */
+    protected function applyFields(Entry $target, Entry $sourceEntry, array $fields): array
+    {
         $skippedFields = [];
-        $nativeFields = ['title', 'slug', 'enabled', 'postDate', 'expiryDate'];
 
         foreach ($fields as $fieldHandle => $value) {
-            $oldValue = $this->getFieldValue($entry, $fieldHandle);
-
-            if (in_array($fieldHandle, $nativeFields, true)) {
-                if ($fieldHandle === 'enabled') {
-                    $entry->enabled = (bool) $value;
-                    $entry->setEnabledForSite((bool) $value);
-                    $value = (bool) $value;
-                } elseif ($fieldHandle === 'postDate' || $fieldHandle === 'expiryDate') {
-                    $entry->{$fieldHandle} = $value !== null ? new \DateTime($value) : null;
-                } else {
-                    $entry->{$fieldHandle} = $value;
-                }
+            if (in_array($fieldHandle, self::NATIVE_FIELDS, true)) {
+                $this->applyNativeField($target, $fieldHandle, $value);
             } else {
-                $value = CoPilot::getInstance()->fieldNormalizer->normalize($fieldHandle, $value, $entry);
+                $value = CoPilot::getInstance()->fieldNormalizer->normalize($fieldHandle, $value, $sourceEntry);
 
                 try {
-                    $entry->setFieldValue($fieldHandle, $value);
+                    $target->setFieldValue($fieldHandle, $value);
                 } catch (\Throwable $e) {
                     $skippedFields[$fieldHandle] = $e->getMessage();
 
                     continue;
                 }
 
-                // Address elements only support the primary site, but Craft's
-                // Addresses field copies the owner's siteId to new addresses.
-                $this->fixNewAddressSiteIds($entry, $fieldHandle);
-            }
-
-            $diff[$fieldHandle] = [
-                'old' => $oldValue,
-                'new' => $value,
-            ];
-        }
-
-        $updateBehavior = $behaviorOverride
-            ?? ElementUpdateBehavior::tryFrom($plugin->getSettings()->elementUpdateBehavior)
-            ?? ElementUpdateBehavior::ProvisionalDraft;
-
-        $targetEntry = $entry;
-        $behaviorMessage = 'Entry updated successfully.';
-
-        if ($updateBehavior !== ElementUpdateBehavior::DirectSave) {
-            // Can't create a draft from a draft, fall back to direct save
-            if ($entry->getIsDraft()) {
-                $behaviorMessage = 'Draft entry updated directly.';
-            } else {
-                $user = Craft::$app->getUser()->getIdentity();
-                if (!$user) {
-                    return [
-                        'error' => 'Access denied – no authenticated user.',
-                        'retryHint' => null,
-                    ];
-                }
-
-                $targetEntry = $this->resolveTargetEntry($entry, $user, $updateBehavior);
-                $this->applyFields($targetEntry, $fields, $nativeFields);
-
-                $behaviorMessage = match ($updateBehavior) {
-                    ElementUpdateBehavior::Draft => 'Entry changes saved as a new draft.',
-                    ElementUpdateBehavior::ProvisionalDraft => 'Entry changes saved as a provisional draft (unsaved changes visible in the control panel).',
-                };
+                $this->fixAddressSiteIds($target, $fieldHandle);
             }
         }
 
+        return $skippedFields;
+    }
+
+    private function applyNativeField(Entry $entry, string $fieldHandle, mixed $value): void
+    {
+        match ($fieldHandle) {
+            'enabled' => (function() use ($entry, $value) {
+                $entry->enabled = (bool) $value;
+                $entry->setEnabledForSite((bool) $value);
+            }
+            )(),
+            'postDate', 'expiryDate' => $entry->{$fieldHandle} = $value !== null ? new \DateTime($value) : null,
+            default => $entry->{$fieldHandle} = $value,
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $diff
+     * @param array<string, string> $skippedFields
+     * @param array<string, mixed> $fields
+     * @return array<string, mixed>
+     */
+    private function saveAndBuildResult(
+        Entry $targetEntry,
+        Entry $sourceEntry,
+        ?string $siteHandle,
+        array $diff,
+        array $skippedFields,
+        string $behaviorMessage,
+        array $fields,
+    ): array {
         try {
             $saved = Craft::$app->getElements()->saveElement($targetEntry);
-        } catch (\craft\errors\UnsupportedSiteException $e) {
-            $element = $e->element;
-            $debugInfo = sprintf(
-                'elementType=%s, elementId=%s, siteId=%s, entrySiteId=%s, siteHandle=%s',
-                get_class($element),
-                $element->id ?? 'new',
-                $e->siteId,
-                $entry->siteId,
-                $siteHandle ?? 'null',
-            );
-            Logger::warning("UpdateEntry UnsupportedSiteException: {$debugInfo}");
-
-            return [
-                'error' => "Save failed: {$e->getMessage()} ({$debugInfo})",
-                'retryHint' => null,
-            ];
+        } catch (UnsupportedSiteException $e) {
+            return $this->buildUnsupportedSiteError($e, $sourceEntry, $siteHandle);
         } catch (\Throwable $e) {
-            $message = $e->getMessage();
-            $retryHint = null;
-
-            if (stripos($message, 'unknown property') !== false) {
-                $retryHint = 'A field handle is incorrect (case-sensitive). Call describeSection to verify the exact handles and retry.';
-            }
-
-            return [
-                'error' => "Save failed: {$message}",
-                'retryHint' => $retryHint,
-            ];
+            return $this->buildSaveError($e);
         }
 
         if (!$saved) {
-            $errors = $targetEntry->getFirstErrors();
-
-            foreach ($fields as $fieldHandle => $value) {
-                if (in_array($fieldHandle, $nativeFields, true)) {
-                    continue;
-                }
-
-                $nestedErrors = $this->collectNestedErrors($targetEntry, $fieldHandle);
-                if (!empty($nestedErrors)) {
-                    $errors["nestedElementErrors.{$fieldHandle}"] = $nestedErrors;
-                }
-            }
-
-            return [
-                'error' => 'Failed to save entry.',
-                'validationErrors' => $errors,
-                'retryHint' => 'Fix the fields listed in validationErrors and retry.',
-            ];
+            return $this->buildValidationError($targetEntry, $fields);
         }
 
         $result = [
@@ -179,10 +191,13 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
         return $result;
     }
 
+    // ── Entry resolution ────────────────────────────────────────────────
+
     /**
      * Resolves an entry by ID and optional site handle, including cross-site propagation.
      *
      * @return Entry|array<string, mixed> The entry or an error response array
+
      */
     protected function resolveEntry(int $entryId, ?string $siteHandle): Entry|array
     {
@@ -190,44 +205,26 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
 
         if ($siteHandle) {
             $site = Craft::$app->getSites()->getSiteByHandle($siteHandle);
-            if ($site) {
-                $query->siteId($site->id);
-            } else {
-                $query->site('*');
-            }
+            $site ? $query->siteId($site->id) : $query->site('*');
         } else {
             $query->site('*');
         }
 
         $entry = $query->one();
 
-        // Entry not found on target site — try to create the site version
         if (!$entry && $siteHandle) {
             $entry = $this->createSiteVersion($entryId, $siteHandle);
             if (is_array($entry)) {
-                return $entry; // error response
+                return $entry;
             }
         }
 
         if (!$entry) {
-            return [
-                'error' => "Entry #{$entryId} not found.",
-                'retryHint' => null,
-            ];
+            return ['error' => "Entry #{$entryId} not found.", 'retryHint' => null];
         }
 
-        // Prevent direct updates to nested Matrix block entries, they must be
-        // updated via their parent entry's Matrix field.
         if ($entry->getOwnerId() !== null) {
-            $ownerId = $entry->getOwnerId();
-            $fieldHandle = $entry->fieldId
-                ? (Craft::$app->getFields()->getFieldById($entry->fieldId)?->handle ?? 'unknown')
-                : 'unknown';
-
-            return [
-                'error' => "Entry #{$entryId} is a nested Matrix block owned by entry #{$ownerId}. You cannot update it directly.",
-                'retryHint' => "Update the parent entry #{$ownerId} instead. To modify this block, pass the block data with \"_blockId\": {$entryId} inside the \"{$fieldHandle}\" Matrix field of entry #{$ownerId}.",
-            ];
+            return $this->buildNestedBlockError($entry, $entryId);
         }
 
         return $entry;
@@ -235,9 +232,6 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
 
     /**
      * Normalizes flat field arguments into a proper fields array.
-     *
-     * AI models sometimes send field values as top-level arguments instead of
-     * wrapping them in a "fields" object.
      *
      * @param array<string, mixed> $arguments
      * @param array<int, string> $reservedKeys
@@ -253,8 +247,6 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
 
         $fields = $arguments['fields'];
 
-        // Models may send native fields at top level alongside a "fields" object.
-        // Merge them in so they aren't silently dropped.
         foreach (['title', 'slug', 'enabled', 'postDate', 'expiryDate'] as $native) {
             if (array_key_exists($native, $arguments) && !array_key_exists($native, $fields)) {
                 $fields[$native] = $arguments[$native];
@@ -264,7 +256,9 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
         return is_array($fields) && $fields !== [] ? $fields : null;
     }
 
-    private function resolveTargetEntry(Entry $entry, \craft\elements\User $user, ElementUpdateBehavior $behavior): Entry
+    // ── Draft handling ──────────────────────────────────────────────────
+
+    protected function createOrResolveDraft(Entry $entry, User $user, ElementUpdateBehavior $behavior): Entry
     {
         if ($behavior === ElementUpdateBehavior::ProvisionalDraft) {
             $existingDraft = Entry::find()
@@ -279,231 +273,45 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
                 return $existingDraft;
             }
 
-            return Craft::$app->getDrafts()->createDraft(
-                $entry,
-                $user->id,
-                null,
-                null,
-                [],
-                true,
-            );
+            return Craft::$app->getDrafts()->createDraft($entry, $user->id, null, null, [], true);
         }
 
-        // ElementUpdateBehavior::Draft
-        return Craft::$app->getDrafts()->createDraft(
-            $entry,
-            $user->id,
-            'CoPilot Draft',
-        );
+        return Craft::$app->getDrafts()->createDraft($entry, $user->id, 'CoPilot Draft');
     }
 
+    // ── Diff & field value helpers ──────────────────────────────────────
+
     /**
-     * Applies field values to a target entry.
-     *
      * @param array<string, mixed> $fields
-     * @param array<int, string> $nativeFields
+     * @return array<string, array{old: mixed, new: mixed}>
      */
-    private function applyFields(Entry $target, array $fields, array $nativeFields): void
+    private function buildDiff(Entry $entry, array $fields): array
     {
+        $diff = [];
         foreach ($fields as $fieldHandle => $value) {
-            if (in_array($fieldHandle, $nativeFields, true)) {
-                if ($fieldHandle === 'enabled') {
-                    $target->enabled = (bool) $value;
-                    $target->setEnabledForSite((bool) $value);
-                } elseif ($fieldHandle === 'postDate' || $fieldHandle === 'expiryDate') {
-                    $target->{$fieldHandle} = $value !== null ? new \DateTime($value) : null;
-                } else {
-                    $target->{$fieldHandle} = $value;
-                }
-            } else {
-                $value = CoPilot::getInstance()->fieldNormalizer->normalize($fieldHandle, $value, $target);
-
-                try {
-                    $target->setFieldValue($fieldHandle, $value);
-                } catch (\Throwable) {
-                    continue;
-                }
-
-                $this->fixNewAddressSiteIds($target, $fieldHandle);
-            }
-        }
-    }
-
-    /**
-     * @return array<int, array<string, string>>
-     */
-    private function collectNestedErrors(Entry $entry, string $fieldHandle): array
-    {
-        $nestedErrors = [];
-
-        try {
-            $fieldValue = $entry->getFieldValue($fieldHandle);
-        } catch (\Throwable) {
-            return [];
+            $diff[$fieldHandle] = [
+                'old' => $this->getFieldValue($entry, $fieldHandle),
+                'new' => $value,
+            ];
         }
 
-        if ($fieldValue instanceof \craft\elements\db\ElementQuery) {
-            $elements = $fieldValue->getCachedResult() ?? [];
-            foreach ($elements as $i => $element) {
-                if ($element->hasErrors()) {
-                    $nestedErrors[$i] = $element->getFirstErrors();
-                }
-            }
-        }
-
-        if ($fieldValue instanceof \craft\base\ElementInterface && $fieldValue->hasErrors()) {
-            $nestedErrors[] = $fieldValue->getFirstErrors();
-        }
-
-        return $nestedErrors;
-    }
-
-    /**
-     * Fixes siteId on new Address elements after setFieldValue.
-     *
-     * Craft's Addresses field copies the owner entry's siteId to new addresses,
-     * but Address elements are not localized and only support the primary site.
-     * This also recurses into nested Matrix blocks.
-     */
-    private function fixNewAddressSiteIds(Entry $entry, string $fieldHandle): void
-    {
-        $primarySiteId = Craft::$app->getSites()->getPrimarySite()->id;
-        if ($entry->siteId === $primarySiteId) {
-            return;
-        }
-
-        try {
-            $fieldValue = $entry->getFieldValue($fieldHandle);
-        } catch (\Throwable) {
-            return;
-        }
-
-        // ContentBlock fields are not ElementQuery but ContentBlock elements
-        if ($fieldValue instanceof \craft\elements\ContentBlock) {
-            $this->fixContentBlockAddressSiteIds($fieldValue, $primarySiteId);
-
-            return;
-        }
-
-        if (!$fieldValue instanceof \craft\elements\db\ElementQuery) {
-            return;
-        }
-
-        $cached = $fieldValue->getCachedResult();
-        if ($cached === null) {
-            return;
-        }
-
-        foreach ($cached as $nested) {
-            if ($nested instanceof \craft\elements\Address && !$nested->id) {
-                $nested->siteId = $primarySiteId;
-            }
-
-            // Recurse into Matrix blocks (Entry elements in Craft 5)
-            if ($nested instanceof Entry) {
-                $this->fixAddressSiteIdsRecursive($nested, $primarySiteId);
-            }
-        }
-    }
-
-    /**
-     * Fixes Address siteIds inside ContentBlock sub-fields.
-     */
-    private function fixContentBlockAddressSiteIds(\craft\elements\ContentBlock $contentBlock, int $primarySiteId): void
-    {
-        $fieldLayout = $contentBlock->getFieldLayout();
-
-        foreach ($fieldLayout->getCustomFields() as $field) {
-            try {
-                $value = $contentBlock->getFieldValue($field->handle);
-            } catch (\Throwable) {
-                continue;
-            }
-
-            if ($value instanceof \craft\elements\db\ElementQuery) {
-                $cached = $value->getCachedResult();
-                if ($cached === null) {
-                    continue;
-                }
-
-                foreach ($cached as $nested) {
-                    if ($nested instanceof \craft\elements\Address && !$nested->id) {
-                        $nested->siteId = $primarySiteId;
-                    }
-
-                    if ($nested instanceof Entry) {
-                        $this->fixAddressSiteIdsRecursive($nested, $primarySiteId);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Recursively fixes Address siteIds inside nested Entry elements (Matrix blocks).
-     */
-    private function fixAddressSiteIdsRecursive(Entry $block, int $primarySiteId): void
-    {
-        $fieldLayout = $block->getFieldLayout();
-
-        foreach ($fieldLayout->getCustomFields() as $field) {
-            try {
-                $value = $block->getFieldValue($field->handle);
-            } catch (\Throwable) {
-                continue;
-            }
-
-            // Also handle ContentBlock sub-fields within Matrix blocks
-            if ($value instanceof \craft\elements\ContentBlock) {
-                $this->fixContentBlockAddressSiteIds($value, $primarySiteId);
-
-                continue;
-            }
-
-            if (!$value instanceof \craft\elements\db\ElementQuery) {
-                continue;
-            }
-
-            $cached = $value->getCachedResult();
-            if ($cached === null) {
-                continue;
-            }
-
-            foreach ($cached as $nested) {
-                if ($nested instanceof \craft\elements\Address && !$nested->id) {
-                    $nested->siteId = $primarySiteId;
-                }
-
-                // Recurse further for deeply nested Matrix blocks
-                if ($nested instanceof Entry) {
-                    $this->fixAddressSiteIdsRecursive($nested, $primarySiteId);
-                }
-            }
-        }
+        return $diff;
     }
 
     protected function getFieldValue(Entry $entry, string $fieldHandle): mixed
     {
-        if ($fieldHandle === 'title') {
-            return $entry->title;
-        }
+        return match ($fieldHandle) {
+            'title' => $entry->title,
+            'slug' => $entry->slug,
+            'enabled' => $entry->enabled && $entry->getEnabledForSite(),
+            'postDate' => $entry->postDate?->format('c'),
+            'expiryDate' => $entry->expiryDate?->format('c'),
+            default => $this->getCustomFieldValue($entry, $fieldHandle),
+        };
+    }
 
-        if ($fieldHandle === 'slug') {
-            return $entry->slug;
-        }
-
-        if ($fieldHandle === 'enabled') {
-            return $entry->enabled && $entry->getEnabledForSite();
-        }
-
-        if ($fieldHandle === 'postDate') {
-            return $entry->postDate?->format('c');
-        }
-
-        if ($fieldHandle === 'expiryDate') {
-            return $entry->expiryDate?->format('c');
-        }
-
+    private function getCustomFieldValue(Entry $entry, string $fieldHandle): mixed
+    {
         try {
             $value = $entry->getFieldValue($fieldHandle);
 
@@ -519,7 +327,7 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
                 return $value;
             }
 
-            if ($value instanceof \craft\elements\db\ElementQuery) {
+            if ($value instanceof ElementQuery) {
                 return $value->ids();
             }
 
@@ -529,58 +337,216 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
         }
     }
 
+    // ── Address siteId fix (recursive) ──────────────────────────────────
+
     /**
-     * Creates an entry's site version using Craft's built-in propagation.
+     * Fixes siteId on new Address elements after setFieldValue.
      *
-     * For Custom propagation, setEnabledForSite() makes the target site appear
-     * in getSupportedSites() with propagate=true, so propagateElement() works.
-     *
-     * For All, propagateElement() works directly (all sites are supported).
-     *
-     * For None/Language/SiteGroup, the target site may not be in
-     * getSupportedSites() at all (e.g. different language). Craft's data model
-     * requires a separate entry per site/language/group in these cases. The
-     * agent must use createEntry instead.
-     *
+     * Craft's Addresses field copies the owner entry's siteId to new addresses,
+     * but Address elements only support the primary site. This method recursively
+     * traverses ContentBlocks, Matrix blocks, and nested entries to fix all new addresses.
+     */
+    protected function fixAddressSiteIds(Entry $entry, string $fieldHandle): void
+    {
+        $primarySiteId = Craft::$app->getSites()->getPrimarySite()->id;
+        if ($entry->siteId === $primarySiteId) {
+            return;
+        }
+
+        try {
+            $fieldValue = $entry->getFieldValue($fieldHandle);
+        } catch (\Throwable) {
+            return;
+        }
+
+        $this->fixAddressSiteIdsOnValue($fieldValue, $primarySiteId);
+    }
+
+    private function fixAddressSiteIdsOnValue(mixed $value, int $primarySiteId): void
+    {
+        if ($value instanceof ContentBlock) {
+            foreach ($value->getFieldLayout()->getCustomFields() as $field) {
+                try {
+                    $this->fixAddressSiteIdsOnValue($value->getFieldValue($field->handle), $primarySiteId);
+                } catch (\Throwable) {
+                    continue;
+                }
+            }
+
+            return;
+        }
+
+        if (!$value instanceof ElementQuery) {
+            return;
+        }
+
+        $cached = $value->getCachedResult();
+        if ($cached === null) {
+            return;
+        }
+
+        foreach ($cached as $nested) {
+            if ($nested instanceof Address && !$nested->id) {
+                $nested->siteId = $primarySiteId;
+            }
+
+            if ($nested instanceof Element) {
+                $this->fixAddressSiteIdsOnElement($nested, $primarySiteId);
+            }
+        }
+    }
+
+    private function fixAddressSiteIdsOnElement(Element $element, int $primarySiteId): void
+    {
+        $fieldLayout = $element->getFieldLayout();
+        if ($fieldLayout === null) {
+            return;
+        }
+
+        foreach ($fieldLayout->getCustomFields() as $field) {
+            try {
+                $this->fixAddressSiteIdsOnValue($element->getFieldValue($field->handle), $primarySiteId);
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+    }
+
+    // ── Error builders ──────────────────────────────────────────────────
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildNestedBlockError(Entry $entry, int $entryId): array
+    {
+        $ownerId = $entry->getOwnerId();
+        $fieldHandle = $entry->fieldId
+            ? (Craft::$app->getFields()->getFieldById($entry->fieldId)?->handle ?? 'unknown')
+            : 'unknown';
+
+        return [
+            'error' => "Entry #{$entryId} is a nested Matrix block owned by entry #{$ownerId}. You cannot update it directly.",
+            'retryHint' => "Update the parent entry #{$ownerId} instead. To modify this block, pass the block data with \"_blockId\": {$entryId} inside the \"{$fieldHandle}\" Matrix field of entry #{$ownerId}.",
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildUnsupportedSiteError(UnsupportedSiteException $e, Entry $entry, ?string $siteHandle): array
+    {
+        $element = $e->element;
+        $debugInfo = sprintf(
+            'elementType=%s, elementId=%s, siteId=%s, entrySiteId=%s, siteHandle=%s',
+            get_class($element),
+            $element->id ?? 'new',
+            $e->siteId,
+            $entry->siteId,
+            $siteHandle ?? 'null',
+        );
+        Logger::warning("UpdateEntry UnsupportedSiteException: {$debugInfo}");
+
+        return ['error' => "Save failed: {$e->getMessage()} ({$debugInfo})", 'retryHint' => null];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildSaveError(\Throwable $e): array
+    {
+        $message = $e->getMessage();
+        $retryHint = null;
+
+        if (stripos($message, 'unknown property') !== false) {
+            $retryHint = 'A field handle is incorrect (case-sensitive). Call describeSection to verify the exact handles and retry.';
+        }
+
+        return ['error' => "Save failed: {$message}", 'retryHint' => $retryHint];
+    }
+
+    /**
+     * @param array<string, mixed> $fields
+     * @return array<string, mixed>
+     */
+    private function buildValidationError(Entry $targetEntry, array $fields): array
+    {
+        $errors = $targetEntry->getFirstErrors();
+
+        foreach ($fields as $fieldHandle => $value) {
+            if (in_array($fieldHandle, self::NATIVE_FIELDS, true)) {
+                continue;
+            }
+
+            $nestedErrors = $this->collectNestedErrors($targetEntry, $fieldHandle);
+            if (!empty($nestedErrors)) {
+                $errors["nestedElementErrors.{$fieldHandle}"] = $nestedErrors;
+            }
+        }
+
+        return [
+            'error' => 'Failed to save entry.',
+            'validationErrors' => $errors,
+            'retryHint' => 'Fix the fields listed in validationErrors and retry.',
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, string>>
+     */
+    private function collectNestedErrors(Entry $entry, string $fieldHandle): array
+    {
+        $nestedErrors = [];
+
+        try {
+            $fieldValue = $entry->getFieldValue($fieldHandle);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        if ($fieldValue instanceof ElementQuery) {
+            $elements = $fieldValue->getCachedResult() ?? [];
+            foreach ($elements as $i => $element) {
+                if ($element->hasErrors()) {
+                    $nestedErrors[$i] = $element->getFirstErrors();
+                }
+            }
+        }
+
+        if ($fieldValue instanceof ElementInterface && $fieldValue->hasErrors()) {
+            $nestedErrors[] = $fieldValue->getFirstErrors();
+        }
+
+        return $nestedErrors;
+    }
+
+    // ── Cross-site propagation ──────────────────────────────────────────
+
+    /**
      * @return Entry|array<string, mixed> The entry or an error response
      */
-    private function createSiteVersion(int $entryId, string $siteHandle): Entry|array
+    protected function createSiteVersion(int $entryId, string $siteHandle): Entry|array
     {
         $site = Craft::$app->getSites()->getSiteByHandle($siteHandle);
         if (!$site) {
-            return [
-                'error' => "Site \"{$siteHandle}\" not found.",
-                'retryHint' => 'Call listSites to get valid site handles.',
-            ];
+            return ['error' => "Site \"{$siteHandle}\" not found.", 'retryHint' => 'Call listSites to get valid site handles.'];
         }
 
         $sourceEntry = Entry::find()->id($entryId)->status(null)->drafts(null)->site('*')->one();
         if (!$sourceEntry) {
-            return [
-                'error' => "Entry #{$entryId} not found.",
-                'retryHint' => null,
-            ];
+            return ['error' => "Entry #{$entryId} not found.", 'retryHint' => null];
         }
 
         $section = $sourceEntry->getSection();
         if (!$section) {
-            return [
-                'error' => "Entry #{$entryId} has no section.",
-                'retryHint' => null,
-            ];
+            return ['error' => "Entry #{$entryId} has no section.", 'retryHint' => null];
         }
 
         $siteSettings = $section->getSiteSettings();
         if (!isset($siteSettings[$site->id])) {
-            return [
-                'error' => "Section \"{$section->handle}\" is not enabled for site \"{$siteHandle}\".",
-                'retryHint' => null,
-            ];
+            return ['error' => "Section \"{$section->handle}\" is not enabled for site \"{$siteHandle}\".", 'retryHint' => null];
         }
 
-        // For Custom propagation, mark the entry as enabled for the target site
-        // so getSupportedSites() includes it with propagate=true.
-        if ($section->propagationMethod === \craft\enums\PropagationMethod::Custom) {
+        if ($section->propagationMethod === PropagationMethod::Custom) {
             $sourceEntry->setEnabledForSite([$site->id => true]);
         }
 
@@ -590,28 +556,21 @@ abstract class AbstractEntryUpdateTool implements ToolInterface
             $entry = Entry::find()->id($entryId)->status(null)->drafts(null)->siteId($site->id)->one();
 
             if (!$entry) {
-                return [
-                    'error' => "Entry #{$entryId} could not be created on site \"{$siteHandle}\".",
-                    'retryHint' => null,
-                ];
+                return ['error' => "Entry #{$entryId} could not be created on site \"{$siteHandle}\".", 'retryHint' => null];
             }
 
             return $entry;
-        } catch (\craft\errors\UnsupportedSiteException) {
+        } catch (UnsupportedSiteException) {
             $method = $section->propagationMethod->value;
 
             return [
                 'error' => "Entry #{$entryId} cannot be propagated to site \"{$siteHandle}\". "
-                    . "Section \"{$section->handle}\" uses \"{$method}\" propagation, "
-                    . "so entries on different sites/languages/groups are independent.",
+                    . "Section \"{$section->handle}\" uses \"{$method}\" propagation.",
                 'retryHint' => "Use createEntry with siteHandle \"{$siteHandle}\" and section \"{$section->handle}\" "
                     . "to create a new translated entry on the target site. Copy the content from entry #{$entryId}.",
             ];
         } catch (\Throwable $e) {
-            return [
-                'error' => "Entry #{$entryId} could not be propagated to site \"{$siteHandle}\": {$e->getMessage()}",
-                'retryHint' => null,
-            ];
+            return ['error' => "Entry #{$entryId} could not be propagated to site \"{$siteHandle}\": {$e->getMessage()}", 'retryHint' => null];
         }
     }
 }
