@@ -33,7 +33,7 @@
   },
   "extra": {
     "handle": "co-pilot",
-    "name": "coPilot",
+    "name": "CoPilot",
     "developer": "Samuel Reichör",
     "documentationUrl": "https://samuelreichor.at/libraries/craft-co-pilot",
     "class": "samuelreichor\\coPilot\\CoPilot"
