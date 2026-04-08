@@ -6,7 +6,7 @@
 	<h1 align="center">CoPilot your AI Agent for Craft CMS</h1>
   <p align="center">
     An AI Agent for Craft CMS in your control panel, it understands, creates, edits, translates, and publishes content across all your sites and languages using natural conversation.
-  <br/>
+  </p>
 </div>
 
 <p align="center">
@@ -35,6 +35,10 @@
 - **Custom Commands & Tools**: Register your own slash commands and tools via events to extend the agent with project-specific capabilities
 - **Audit Log**: Full traceability of every read, create, and update the agent performs (with field-level diffs)
 - **Web Search**: Let the agent browse the web to research and enrich your content
+
+## Plugins
+
+- [Langdock Provider](https://github.com/samuelreichor/craft-co-pilot-langdock): Adds Langdock as Provider. Langdock is a DSGVO friendly way to use LLMs.
 
 ## Requirements
 
