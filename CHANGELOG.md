@@ -1,5 +1,10 @@
 # Release Notes for coPilot
 
+## 1.0.3 - 2026-04-21
+
+- Add support for opus 4.7
+- Add support for enabled field in LLMify settings
+
 ## 1.0.2 - 2026-04-02
 
 - Only show default provider options that are actually configured
