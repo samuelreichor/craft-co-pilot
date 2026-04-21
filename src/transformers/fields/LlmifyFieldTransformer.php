@@ -31,6 +31,7 @@ class LlmifyFieldTransformer implements FieldTransformerInterface
     {
         $fieldInfo['hint'] = 'LLMify settings. Controls how this entry is exposed to LLMs. '
             . 'Object with these groups of keys:\n'
+            . '**Enabled**: Set "enabled": true/false to include/exclude this entry from markdown generation, llms.txt, and llms-full.txt. Defaults to true.\n'
             . '**Title**: Set "overrideTitleSettings": true to enable entry-level overrides. '
             . 'Then set "llmTitleSource" to a field handle (e.g. "title", "headline") to pull the title from that field, '
             . 'OR set "llmTitleSource": "custom" AND provide "llmTitle": "Your custom title". '
@@ -52,6 +53,7 @@ class LlmifyFieldTransformer implements FieldTransformerInterface
         $data = [];
 
         $keys = [
+            'enabled',
             'overrideTitleSettings',
             'llmTitleSource',
             'llmTitle',
