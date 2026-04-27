@@ -217,6 +217,17 @@ class OpenAIProvider implements ProviderInterface
             }
 
             if ($role === 'assistant' && !empty($message['toolCalls'])) {
+                // Reasoning models (gpt-5.x, o-series) emit `reasoning` items in the
+                // Responses API output. With `store: false`, those items must be
+                // re-included on subsequent turns, otherwise the model returns an
+                // empty response after tool results.
+                if (!empty($message['rawModelParts'])) {
+                    foreach ($this->sanitizeRawModelParts($message['rawModelParts']) as $part) {
+                        $input[] = $part;
+                    }
+                    continue;
+                }
+
                 if (!empty($message['content'])) {
                     $input[] = [
                         'role' => 'assistant',
@@ -281,9 +292,13 @@ class OpenAIProvider implements ProviderInterface
 
         $text = null;
         $toolCalls = [];
+        /** @var array<int, array<string, mixed>> $rawModelParts */
+        $rawModelParts = [];
 
         foreach ($data['output'] ?? [] as $item) {
-            if ($item['type'] === 'message') {
+            $itemType = $item['type'] ?? '';
+
+            if ($itemType === 'message') {
                 foreach ($item['content'] ?? [] as $content) {
                     if ($content['type'] === 'output_text') {
                         $text = ($text ?? '') . $content['text'];
@@ -291,12 +306,18 @@ class OpenAIProvider implements ProviderInterface
                 }
             }
 
-            if ($item['type'] === 'function_call') {
+            if ($itemType === 'function_call') {
                 $toolCalls[] = [
                     'id' => $item['call_id'],
                     'name' => $item['name'],
                     'arguments' => json_decode(self::fixBrokenUnicodeEscapes($item['arguments']), true) ?? [],
                 ];
+            }
+
+            // Preserve every output item so reasoning models (gpt-5.x, o-series)
+            // can be continued on the next turn when `store: false`.
+            if ($itemType !== '') {
+                $rawModelParts[] = $item;
             }
         }
 
@@ -309,7 +330,7 @@ class OpenAIProvider implements ProviderInterface
         }
 
         if (!empty($toolCalls)) {
-            return AIResponse::toolCall($toolCalls, $text, $inputTokens, $outputTokens);
+            return AIResponse::toolCall($toolCalls, $text, $inputTokens, $outputTokens, $rawModelParts ?: null);
         }
 
         return AIResponse::text($text ?? '', $inputTokens, $outputTokens);
@@ -325,6 +346,8 @@ class OpenAIProvider implements ProviderInterface
         $hasTextContent = false;
         $status = 'unknown';
         $chunksProcessed = 0;
+        /** @var array<int, array<string, mixed>> $rawModelParts */
+        $rawModelParts = [];
 
         try {
             StreamHelper::stream(
@@ -332,9 +355,9 @@ class OpenAIProvider implements ProviderInterface
                 self::API_URL,
                 ['Authorization' => "Bearer {$apiKey}"],
                 $payload,
-                function(string $eventType, array $json) use (&$toolCalls, &$hasTextContent, &$status, &$chunksProcessed, $onChunk): void {
+                function(string $eventType, array $json) use (&$toolCalls, &$hasTextContent, &$status, &$chunksProcessed, &$rawModelParts, $onChunk): void {
                     $chunksProcessed++;
-                    $this->processStreamEvent($eventType, $json, $toolCalls, $hasTextContent, $status, $onChunk);
+                    $this->processStreamEvent($eventType, $json, $toolCalls, $hasTextContent, $status, $rawModelParts, $onChunk);
                 },
             );
 
@@ -354,6 +377,12 @@ class OpenAIProvider implements ProviderInterface
                     toolArguments: json_decode(self::fixBrokenUnicodeEscapes($tc['arguments']), true) ?? [],
                 ));
             }
+
+            // Reasoning models need the full output (including `reasoning` items)
+            // re-included on the next turn when `store: false`.
+            if (!empty($toolCalls) && !empty($rawModelParts)) {
+                $onChunk(new StreamChunk('model_parts', rawModelParts: $rawModelParts));
+            }
         } catch (\Throwable $e) {
             Logger::error('OpenAI stream error: ' . $e->getMessage());
             $onChunk(new StreamChunk('error', error: 'OpenAI stream error: ' . $e->getMessage()));
@@ -363,9 +392,10 @@ class OpenAIProvider implements ProviderInterface
     /**
      * @param array<string, mixed> $json
      * @param array<string, array{id: string, name: string, arguments: string}> &$toolCalls
+     * @param array<int, array<string, mixed>> &$rawModelParts
      * @param callable(StreamChunk): void $onChunk
      */
-    private function processStreamEvent(string $eventType, array $json, array &$toolCalls, bool &$hasTextContent, string &$status, callable $onChunk): void
+    private function processStreamEvent(string $eventType, array $json, array &$toolCalls, bool &$hasTextContent, string &$status, array &$rawModelParts, callable $onChunk): void
     {
         switch ($eventType) {
             case 'response.output_text.delta':
@@ -394,6 +424,15 @@ class OpenAIProvider implements ProviderInterface
                 }
                 break;
 
+            case 'response.output_item.done':
+                // Capture the finalized output item (reasoning, message, function_call)
+                // so it can be replayed on the next turn for stateless reasoning loops.
+                $item = $json['item'] ?? null;
+                if (is_array($item) && !empty($item['type'])) {
+                    $rawModelParts[] = $item;
+                }
+                break;
+
             case 'response.completed':
                 $status = $json['response']['status'] ?? 'completed';
                 $usage = $json['response']['usage'] ?? [];
@@ -414,6 +453,34 @@ class OpenAIProvider implements ProviderInterface
     private static function fixBrokenUnicodeEscapes(string $json): string
     {
         return preg_replace('/\\\\u0000([0-9a-fA-F]{2})/', '\\u00$1', $json) ?? $json;
+    }
+
+    /**
+     * Strips fields that the Responses API rejects when re-sending stored output items
+     * (e.g. `status`) and ensures function_call arguments are JSON strings.
+     *
+     * @param array<int, array<string, mixed>> $parts
+     * @return array<int, array<string, mixed>>
+     */
+    private function sanitizeRawModelParts(array $parts): array
+    {
+        $sanitized = [];
+
+        foreach ($parts as $part) {
+            if (!is_array($part) || empty($part['type'])) {
+                continue;
+            }
+
+            unset($part['status']);
+
+            if ($part['type'] === 'function_call' && isset($part['arguments']) && !is_string($part['arguments'])) {
+                $part['arguments'] = json_encode($part['arguments'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            }
+
+            $sanitized[] = $part;
+        }
+
+        return $sanitized;
     }
 
     private function isWebSearchEnabled(): bool
