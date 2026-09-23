@@ -15,17 +15,17 @@ class OpenAIProvider implements ProviderInterface
 {
     private const API_URL = 'https://api.openai.com/v1/responses';
 
-    private const DEFAULT_MODEL = 'gpt-5.5';
-    private const TITLE_MODEL = 'gpt-5.4-nano';
+    private const DEFAULT_MODEL = 'gpt-6-sol';
+    private const TITLE_MODEL = 'gpt-6-luna';
     private const AVAILABLE_MODELS = [
+        'gpt-6-astra',
+        'gpt-6-sol',
+        'gpt-6-luna',
         'gpt-5.6-sol',
         'gpt-5.5',
         'gpt-5.4',
         'gpt-5.4-mini',
         'gpt-5.4-nano',
-        'gpt-4o',
-        'o3',
-        'o4-mini',
     ];
 
     private string $apiKeyEnvVar = '';
