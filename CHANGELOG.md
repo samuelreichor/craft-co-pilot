@@ -1,5 +1,16 @@
 # Release Notes for coPilot
 
+## 1.2.0 - 2026-09-23
+
+### Changed
+- Add Claude Fable 5.1 (`claude-fable-5-1`) and Claude Opus 5.5 (`claude-opus-5-5`) to the Anthropic provider
+- Add GPT-6 Astra, Sol and Luna (`gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`) to the OpenAI provider
+- Add `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.6-flash` and `gemini-3.5-flash-lite` to the Gemini provider
+- Remove the shut-down `gemini-3-flash-preview` from the Gemini provider
+- Remove the legacy `gpt-4o`, `o3` and `o4-mini` from the OpenAI provider
+- Change the default models to `claude-opus-5-5` (Anthropic), `gpt-6-sol` (OpenAI) and `gemini-3.8-flash` (Gemini)
+- Use `gemini-3.5-flash-lite` for Gemini titles and API key checks, since Google now restricts Gemini 2.5 access to existing users
+
 ## 1.1.0 - 2026-08-10
 
 ### Features
